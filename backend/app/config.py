@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./webui.db"
     encryption_key: str = ""
     frontend_origin: str = "http://localhost:5173"
+    # Run Alembic migrations on startup. Tests turn this off and create tables directly.
+    auto_migrate: bool = True
 
     ollama_base_url: str = ""
     openai_compat_base_url: str = ""
