@@ -8,5 +8,5 @@ def test_migrations_create_tables(tmp_path) -> None:
     run_migrations(url)
     run_migrations(url)  # idempotent at head
     engine = make_engine(url)
-    assert "providers" in inspect(engine).get_table_names()
+    assert {"providers", "conversations", "messages"} <= set(inspect(engine).get_table_names())
     engine.dispose()

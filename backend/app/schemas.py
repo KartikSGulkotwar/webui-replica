@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 ProviderKind = Literal["ollama", "openai_compat"]
 Role = Literal["system", "user", "assistant"]
@@ -50,3 +51,43 @@ class ProviderStatus(BaseModel):
 class ModelsResponse(BaseModel):
     models: list[ModelInfo]
     providers: list[ProviderStatus]
+
+
+# --- conversations ---------------------------------------------------------
+
+
+class ConversationCreate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+
+
+class ConversationUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+
+
+class ConversationRead(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MessageRead(BaseModel):
+    id: int
+    role: Role
+    content: str
+    model_id: str | None
+    created_at: datetime
+
+
+class ConversationDetail(ConversationRead):
+    messages: list[MessageRead]
+
+
+# --- chat -------------------------------------------------------------------
+
+
+class ChatStreamRequest(BaseModel):
+    conversation_id: str
+    model_id: str = Field(min_length=3, description='Namespaced, e.g. "ollama:llama3.2:1b"')
+    message: str = Field(min_length=1, max_length=100_000)
+    params: ChatParams = Field(default_factory=ChatParams)

@@ -11,7 +11,7 @@ from app.config import Settings, get_settings
 from app.crypto import KeyCipher
 from app.db import make_engine, run_migrations
 from app.providers.registry import ProviderRegistry
-from app.routers import health, models
+from app.routers import chat, conversations, health, models
 from app.seed import seed_providers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -50,6 +50,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(models.router)
+    app.include_router(conversations.router)
+    app.include_router(chat.router)
     return app
 
 
