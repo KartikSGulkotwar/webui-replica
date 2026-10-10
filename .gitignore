@@ -1,0 +1,16 @@
+.env
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.db
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
