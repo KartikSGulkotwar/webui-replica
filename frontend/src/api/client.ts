@@ -20,7 +20,8 @@ export async function toApiError(resp: Response): Promise<ApiError> {
   try {
     const body = await resp.json()
     if (typeof body.detail === 'string') detail = body.detail
-    else if (Array.isArray(body.detail)) detail = body.detail.map((d: { msg: string }) => d.msg).join('; ')
+    else if (Array.isArray(body.detail))
+      detail = body.detail.map((d: { msg: string }) => d.msg).join('; ')
   } catch {
     // non-JSON error body; keep statusText
   }

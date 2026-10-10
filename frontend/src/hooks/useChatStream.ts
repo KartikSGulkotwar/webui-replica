@@ -72,7 +72,14 @@ export function useChatStream(conversationId: string | undefined) {
       streamingConvRef.current = id
       const baseCount =
         queryClient.getQueryData<ConversationDetail>(conversationKey(id))?.messages.length ?? 0
-      setPending({ conversationId: id, baseCount, userContent: content, modelId, text: '', status: 'streaming' })
+      setPending({
+        conversationId: id,
+        baseCount,
+        userContent: content,
+        modelId,
+        text: '',
+        status: 'streaming',
+      })
 
       let final: { status: StreamStatus; error?: string } | null = null
       const update = (patch: Partial<PendingExchange>) =>
@@ -83,6 +90,8 @@ export function useChatStream(conversationId: string | undefined) {
           { conversation_id: id, model_id: modelId, message: content },
           {
             signal: controller.signal,
+            // The backend has saved the message and set the title; show it in the sidebar now.
+            onOpen: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
             onEvent: (event) => {
               if ('delta' in event) {
                 setPending((p) =>

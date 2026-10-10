@@ -94,7 +94,9 @@ export default function ModelSelector({ data, isLoading, isError, selected, onSe
           </div>
           <div className="max-h-80 overflow-y-auto py-1" role="listbox">
             {isError && (
-              <p className="px-3 py-4 text-sm text-red-500">Could not load models from the backend.</p>
+              <p className="px-3 py-4 text-sm text-red-500">
+                Could not load models from the backend.
+              </p>
             )}
             {data && data.providers.length === 0 && (
               <p className="px-3 py-4 text-sm text-zinc-500">

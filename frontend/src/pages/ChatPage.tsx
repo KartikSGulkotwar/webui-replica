@@ -2,12 +2,13 @@ import { Link, useParams } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import ChatWindow from '../components/ChatWindow'
 import Composer from '../components/Composer'
-import { PlusIcon } from '../components/icons'
+import { MenuIcon, PlusIcon } from '../components/icons'
 import MessageBubble from '../components/MessageBubble'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatStream } from '../hooks/useChatStream'
 import { useConversation } from '../hooks/useConversation'
+import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { modelLabel } from '../lib/models'
 
@@ -18,6 +19,7 @@ export default function ChatPage() {
   const { selected, select } = useSelectedModel(models)
   const conversation = useConversation(id)
   const { pending, send, stop, isStreaming } = useChatStream(id)
+  const { sidebarOpen, openSidebar } = useLayout()
 
   const serverMessages = conversation.data?.messages ?? []
   // A failed send from "/" never got a conversation, so its id is ''.
@@ -25,12 +27,12 @@ export default function ChatPage() {
   // Show the local copy of an exchange until the refetched conversation contains it.
   const showPendingUser = !!p && p.conversationId !== '' && serverMessages.length < p.baseCount + 1
   const showPendingAssistant =
-    !!p &&
-    (p.status === 'streaming' || (p.text !== '' && serverMessages.length < p.baseCount + 2))
+    !!p && (p.status === 'streaming' || (p.text !== '' && serverMessages.length < p.baseCount + 2))
   const pendingError = p?.status === 'error' ? p.error : null
 
   const selectedProviderOk =
-    !selected || (modelsQuery.data?.providers.find((x) => x.id === selected.provider_id)?.ok ?? true)
+    !selected ||
+    (modelsQuery.data?.providers.find((x) => x.id === selected.provider_id)?.ok ?? true)
 
   let disabledReason: string | undefined
   if (modelsQuery.isLoading) disabledReason = 'Loading models…'
@@ -43,7 +45,18 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-2 border-b border-zinc-200 px-2 py-2 dark:border-zinc-800 sm:px-4">
+      <header className="flex items-center gap-1 border-b border-zinc-200 px-2 py-2 dark:border-zinc-800 sm:gap-2 sm:px-4">
+        {!sidebarOpen && (
+          <button
+            type="button"
+            onClick={openSidebar}
+            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            aria-label="Open sidebar"
+            title="Open sidebar"
+          >
+            <MenuIcon />
+          </button>
+        )}
         <ModelSelector
           data={modelsQuery.data}
           isLoading={modelsQuery.isLoading}
@@ -54,14 +67,16 @@ export default function ChatPage() {
         <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500">
           {conversation.data?.title}
         </div>
-        <Link
-          to="/"
-          className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-          aria-label="New chat"
-          title="New chat"
-        >
-          <PlusIcon />
-        </Link>
+        {!sidebarOpen && (
+          <Link
+            to="/"
+            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            aria-label="New chat"
+            title="New chat"
+          >
+            <PlusIcon />
+          </Link>
+        )}
         <ThemeToggle />
       </header>
 
@@ -96,7 +111,9 @@ export default function ChatPage() {
               key={m.id}
               role={m.role}
               content={m.content}
-              model={m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined}
+              model={
+                m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined
+              }
             />
           ))}
           {showPendingUser && <MessageBubble role="user" content={p.userContent} />}

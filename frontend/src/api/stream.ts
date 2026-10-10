@@ -35,7 +35,16 @@ export function createSSEParser(onData: (data: string) => void) {
 
 export async function streamChat(
   body: ChatStreamRequest,
-  { signal, onEvent }: { signal: AbortSignal; onEvent: (event: StreamEvent) => void },
+  {
+    signal,
+    onEvent,
+    onOpen,
+  }: {
+    signal: AbortSignal
+    onEvent: (event: StreamEvent) => void
+    /** Called once the backend accepted the request (user message is saved). */
+    onOpen?: () => void
+  },
 ): Promise<void> {
   const resp = await fetch(apiUrl('/api/chat/stream'), {
     method: 'POST',
@@ -45,6 +54,7 @@ export async function streamChat(
   })
   if (!resp.ok) throw await toApiError(resp)
   if (!resp.body) throw new Error('This browser does not support streaming responses')
+  onOpen?.()
 
   const parser = createSSEParser((data) => {
     try {
