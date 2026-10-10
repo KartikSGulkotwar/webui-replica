@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgresql+psycopg://webui:webui@postgres:5432/webui
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      PROVIDERS_READ_ONLY: ${PROVIDERS_READ_ONLY:-false}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}

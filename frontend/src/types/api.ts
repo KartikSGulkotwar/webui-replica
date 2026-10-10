@@ -64,3 +64,37 @@ export interface ChatStreamRequest {
   model_id: string
   message: string
 }
+
+export interface Provider {
+  id: string
+  name: string
+  kind: ProviderKind
+  base_url: string
+  enabled: boolean
+  has_key: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ProviderInput {
+  name: string
+  kind: ProviderKind
+  base_url: string
+  api_key?: string | null
+  enabled?: boolean
+}
+
+/** api_key: omit to keep the stored key, "" to remove it. */
+export type ProviderPatch = Partial<Omit<ProviderInput, 'kind'>>
+
+export interface ProviderHealth {
+  ok: boolean
+  latency_ms: number | null
+  model_count: number | null
+  error: string | null
+}
+
+export interface AppConfig {
+  providers_read_only: boolean
+  encryption_configured: boolean
+}

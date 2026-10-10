@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import ChatPage from './pages/ChatPage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -10,6 +11,7 @@ export default function App() {
             keeps running when the URL changes to the new conversation. */}
         <Route path="/" element={<ChatPage />} />
         <Route path="/c/:id" element={<ChatPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<ChatPage />} />
       </Route>
     </Routes>

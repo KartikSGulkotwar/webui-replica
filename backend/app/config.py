@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     # Run Alembic migrations on startup. Tests turn this off and create tables directly.
     auto_migrate: bool = True
+    # Public demos have no login, so lock provider management there.
+    providers_read_only: bool = False
 
     ollama_base_url: str = ""
     openai_compat_base_url: str = ""

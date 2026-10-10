@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { ModelInfo, ModelsResponse } from '../types/api'
 import { CheckIcon, ChevronDownIcon, SearchIcon } from './icons'
 
@@ -100,8 +101,14 @@ export default function ModelSelector({ data, isLoading, isError, selected, onSe
             )}
             {data && data.providers.length === 0 && (
               <p className="px-3 py-4 text-sm text-zinc-500">
-                No providers configured. Set <code>OLLAMA_BASE_URL</code> or{' '}
-                <code>OPENAI_COMPAT_BASE_URL</code> on the backend.
+                No providers configured.{' '}
+                <Link
+                  to="/settings"
+                  className="text-indigo-500 hover:underline"
+                  onClick={() => setOpen(false)}
+                >
+                  Add one in Settings
+                </Link>
               </p>
             )}
             {groups.map(({ provider, models }) => (
@@ -112,7 +119,10 @@ export default function ModelSelector({ data, isLoading, isError, selected, onSe
                 </div>
                 {!provider.ok && (
                   <p className="px-3 pb-1 text-xs text-red-500" title={provider.error ?? undefined}>
-                    {provider.error ?? 'Unavailable'}
+                    {provider.error ?? 'Unavailable'} ·{' '}
+                    <Link to="/settings" className="underline" onClick={() => setOpen(false)}>
+                      Settings
+                    </Link>
                   </p>
                 )}
                 {provider.ok && models.length === 0 && (
