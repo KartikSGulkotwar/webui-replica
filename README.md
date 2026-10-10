@@ -14,6 +14,8 @@ docker compose up --build
 - Frontend: http://localhost:3000
 - Backend: http://localhost:8000/api/health
 
+If a port is already in use, override it in `.env` (`FRONTEND_PORT`, `BACKEND_PORT`, `OLLAMA_PORT`), e.g. `FRONTEND_PORT=3080`.
+
 ## Local development
 
 ```bash
