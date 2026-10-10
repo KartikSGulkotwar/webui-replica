@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     auto_migrate: bool = True
     # Public demos have no login, so lock provider management there.
     providers_read_only: bool = False
+    # Messages per minute per client IP on /api/chat/stream; 0 disables.
+    chat_rate_limit_per_minute: int = 20
+    # How many reverse proxies in front of the backend append to X-Forwarded-For
+    # (1 behind nginx or Render). 0 trusts no header and uses the socket address.
+    trusted_proxy_hops: int = 0
 
     ollama_base_url: str = ""
     openai_compat_base_url: str = ""

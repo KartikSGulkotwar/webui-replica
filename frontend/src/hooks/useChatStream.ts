@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
-import { createConversation } from '../api/conversations'
+import { createConversation, deleteConversation } from '../api/conversations'
 import { streamChat } from '../api/stream'
 import type { ConversationDetail } from '../types/api'
 import { conversationKey } from './useConversation'
@@ -19,6 +19,8 @@ export interface PendingExchange {
   text: string
   status: StreamStatus
   error?: string
+  /** Rejected before the backend stored it (rate limit, bad model…): the text goes back to the composer. */
+  notSent?: boolean
 }
 
 export function useChatStream(conversationId: string | undefined) {
@@ -64,10 +66,13 @@ export function useChatStream(conversationId: string | undefined) {
           text: '',
           status: 'error',
           error: errorMessage(err),
+          notSent: true,
         })
         return
       }
 
+      const createdHere = !conversationId
+      let opened = false
       const id = convId
       streamingConvRef.current = id
       const baseCount =
@@ -91,7 +96,10 @@ export function useChatStream(conversationId: string | undefined) {
           {
             signal: controller.signal,
             // The backend has saved the message and set the title; show it in the sidebar now.
-            onOpen: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
+            onOpen: () => {
+              opened = true
+              queryClient.invalidateQueries({ queryKey: ['conversations'] })
+            },
             onEvent: (event) => {
               if ('delta' in event) {
                 setPending((p) =>
@@ -114,6 +122,28 @@ export function useChatStream(conversationId: string | undefined) {
 
       abortRef.current = null
       streamingConvRef.current = null
+
+      if (!opened && final.status === 'error') {
+        if (createdHere) {
+          // Don't leave an empty "New chat" behind for a message that never got in.
+          deleteConversation(id).catch(() => {})
+          queryClient.removeQueries({ queryKey: conversationKey(id) })
+          navigate('/', { replace: true })
+        }
+        setPending({
+          conversationId: createdHere ? '' : id,
+          baseCount,
+          userContent: content,
+          modelId,
+          text: '',
+          status: 'error',
+          error: final.error,
+          notSent: true,
+        })
+        queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        return
+      }
+
       update(final)
 
       await queryClient.invalidateQueries({ queryKey: conversationKey(id) })

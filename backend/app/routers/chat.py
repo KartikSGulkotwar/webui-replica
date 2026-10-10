@@ -2,7 +2,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Engine
@@ -12,6 +12,7 @@ from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
 from app.providers.base import BaseProvider, ProviderError, split_model_id
 from app.providers.registry import RegistryDep
+from app.ratelimit import limit_chat
 from app.routers.conversations import get_conversation_or_404, list_messages
 from app.schemas import ChatMessage, ChatParams, ChatStreamRequest
 
@@ -104,7 +105,7 @@ async def stream_and_persist(
             save()
 
 
-@router.post("/stream")
+@router.post("/stream", dependencies=[Depends(limit_chat)])
 async def chat_stream(
     body: ChatStreamRequest, request: Request, session: SessionDep, registry: RegistryDep
 ) -> StreamingResponse:

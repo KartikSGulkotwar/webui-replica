@@ -1,6 +1,12 @@
-import { memo } from 'react'
+import { lazy, memo, Suspense } from 'react'
 import type { Role } from '../types/api'
-import Markdown from './Markdown'
+
+// Markdown + syntax highlighting is most of the bundle; load it after first paint.
+const Markdown = lazy(() => import('./Markdown'))
+
+function PlainText({ content }: { content: string }) {
+  return <div className="whitespace-pre-wrap break-words leading-7">{content}</div>
+}
 
 interface Props {
   role: Role
@@ -34,7 +40,9 @@ function MessageBubble({ role, content, model, streaming }: Props) {
       )}
       {content ? (
         <div className={streaming ? 'streaming-cursor' : undefined}>
-          <Markdown content={content} />
+          <Suspense fallback={<PlainText content={content} />}>
+            <Markdown content={content} />
+          </Suspense>
         </div>
       ) : (
         streaming && (

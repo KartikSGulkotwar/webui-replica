@@ -27,9 +27,16 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       PROVIDERS_READ_ONLY: ${PROVIDERS_READ_ONLY:-false}
+      CHAT_RATE_LIMIT_PER_MINUTE: ${CHAT_RATE_LIMIT_PER_MINUTE:-20}
+      # Browsers reach the backend through the frontend's nginx proxy.
+      TRUSTED_PROXY_HOPS: 1
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
       OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+    # Lets providers reach services on the host machine (Ollama/LM Studio
+    # installed natively) as host.docker.internal, on Linux as well as macOS.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy

@@ -4,6 +4,7 @@ import { MenuIcon, PlusIcon } from '../components/icons'
 import ProviderCard from '../components/ProviderCard'
 import ProviderForm from '../components/ProviderForm'
 import ThemeToggle from '../components/ThemeToggle'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
 import { useAppConfig, useProviders } from '../hooks/useProviders'
 
@@ -15,9 +16,11 @@ export default function SettingsPage() {
   const config = useAppConfig()
   const providers = useProviders()
   const [editing, setEditing] = useState<Editing>(null)
+  useDocumentTitle('Settings')
 
   const readOnly = config.data?.providers_read_only ?? false
   const encryptionConfigured = config.data?.encryption_configured ?? true
+  const inDocker = config.data?.in_docker ?? false
 
   return (
     <div className="flex h-full flex-col">
@@ -74,6 +77,7 @@ export default function SettingsPage() {
           {editing === 'new' && (
             <ProviderForm
               encryptionConfigured={encryptionConfigured}
+              inDocker={inDocker}
               onDone={() => setEditing(null)}
               onCancel={() => setEditing(null)}
             />
@@ -110,6 +114,7 @@ export default function SettingsPage() {
                   <ProviderForm
                     provider={p}
                     encryptionConfigured={encryptionConfigured}
+                    inDocker={inDocker}
                     onDone={() => setEditing(null)}
                     onCancel={() => setEditing(null)}
                   />

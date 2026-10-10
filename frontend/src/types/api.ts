@@ -97,4 +97,5 @@ export interface ProviderHealth {
 export interface AppConfig {
   providers_read_only: boolean
   encryption_configured: boolean
+  in_docker: boolean
 }

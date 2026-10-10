@@ -7,11 +7,24 @@ interface Props {
   isStreaming: boolean
   disabled: boolean
   disabledReason?: string
+  /** Text to put back after a message was rejected before it was saved. */
+  restoreText?: string
 }
 
-export default function Composer({ onSend, onStop, isStreaming, disabled, disabledReason }: Props) {
+export default function Composer({
+  onSend,
+  onStop,
+  isStreaming,
+  disabled,
+  disabledReason,
+  restoreText,
+}: Props) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (restoreText) setText((current) => current || restoreText)
+  }, [restoreText])
 
   // Grow with content up to a cap, then scroll.
   useEffect(() => {

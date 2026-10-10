@@ -177,6 +177,7 @@ def test_key_without_encryption_key_is_rejected(settings) -> None:
         assert client.get("/api/config").json() == {
             "providers_read_only": False,
             "encryption_configured": False,
+            "in_docker": False,
         }
 
 

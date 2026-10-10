@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import APIRouter, Request
 
 from app import __version__
@@ -16,4 +18,5 @@ async def config(request: Request) -> AppConfig:
     return AppConfig(
         providers_read_only=request.app.state.settings.providers_read_only,
         encryption_configured=request.app.state.cipher.configured,
+        in_docker=Path("/.dockerenv").exists(),
     )

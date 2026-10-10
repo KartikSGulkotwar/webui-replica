@@ -11,6 +11,7 @@ from app.config import Settings, get_settings
 from app.crypto import KeyCipher
 from app.db import make_engine, run_migrations
 from app.providers.registry import ProviderRegistry
+from app.ratelimit import RateLimiter
 from app.routers import chat, conversations, health, models, providers
 from app.seed import seed_providers
 
@@ -40,6 +41,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = make_engine(settings.database_url)
     app.state.cipher = KeyCipher(settings.encryption_key)
+    app.state.chat_limiter = (
+        RateLimiter(settings.chat_rate_limit_per_minute)
+        if settings.chat_rate_limit_per_minute > 0
+        else None
+    )
 
     app.add_middleware(
         CORSMiddleware,

@@ -8,6 +8,7 @@ import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatStream } from '../hooks/useChatStream'
 import { useConversation } from '../hooks/useConversation'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { modelLabel } from '../lib/models'
@@ -20,12 +21,14 @@ export default function ChatPage() {
   const conversation = useConversation(id)
   const { pending, send, stop, isStreaming } = useChatStream(id)
   const { sidebarOpen, openSidebar } = useLayout()
+  useDocumentTitle(id ? conversation.data?.title : undefined)
 
   const serverMessages = conversation.data?.messages ?? []
   // A failed send from "/" never got a conversation, so its id is ''.
   const p = pending && pending.conversationId === (id ?? '') ? pending : null
   // Show the local copy of an exchange until the refetched conversation contains it.
-  const showPendingUser = !!p && p.conversationId !== '' && serverMessages.length < p.baseCount + 1
+  const showPendingUser =
+    !!p && !p.notSent && p.conversationId !== '' && serverMessages.length < p.baseCount + 1
   const showPendingAssistant =
     !!p && (p.status === 'streaming' || (p.text !== '' && serverMessages.length < p.baseCount + 2))
   const pendingError = p?.status === 'error' ? p.error : null
@@ -136,6 +139,7 @@ export default function ChatPage() {
       <Composer
         onSend={(text) => selected && send(text, selected.id)}
         onStop={stop}
+        restoreText={p?.notSent ? p.userContent : undefined}
         isStreaming={isStreaming}
         disabled={!!disabledReason || notFound}
         disabledReason={disabledReason}

@@ -7,8 +7,31 @@ export interface Preset {
   needsKey: boolean
 }
 
-export const PRESETS: Preset[] = [
-  { label: 'Ollama', kind: 'ollama', base_url: 'http://localhost:11434', needsKey: false },
+/**
+ * Provider URLs are called by the backend, not the browser. When the backend runs
+ * in Docker, "localhost" is the container itself, so local servers need
+ * host.docker.internal (or the compose service name for the bundled Ollama).
+ */
+export function getPresets(inDocker: boolean): Preset[] {
+  const host = inDocker ? 'host.docker.internal' : 'localhost'
+  return [
+    {
+      label: 'Ollama',
+      kind: 'ollama',
+      base_url: inDocker ? 'http://ollama:11434' : 'http://localhost:11434',
+      needsKey: false,
+    },
+    ...REMOTE_PRESETS,
+    {
+      label: 'LM Studio',
+      kind: 'openai_compat',
+      base_url: `http://${host}:1234/v1`,
+      needsKey: false,
+    },
+  ]
+}
+
+const REMOTE_PRESETS: Preset[] = [
   {
     label: 'Groq',
     kind: 'openai_compat',
@@ -27,12 +50,6 @@ export const PRESETS: Preset[] = [
     kind: 'openai_compat',
     base_url: 'https://api.together.xyz/v1',
     needsKey: true,
-  },
-  {
-    label: 'LM Studio',
-    kind: 'openai_compat',
-    base_url: 'http://localhost:1234/v1',
-    needsKey: false,
   },
 ]
 

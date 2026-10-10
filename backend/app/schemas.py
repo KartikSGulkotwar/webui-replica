@@ -163,3 +163,5 @@ class ProviderTest(BaseModel):
 class AppConfig(BaseModel):
     providers_read_only: bool
     encryption_configured: bool
+    # Lets the UI suggest URLs that work from inside a container.
+    in_docker: bool

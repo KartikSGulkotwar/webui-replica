@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { errorMessage } from '../api/client'
 import { testConnection } from '../api/providers'
 import { useCreateProvider, useUpdateProvider } from '../hooks/useProviders'
-import { KIND_LABELS, PRESETS } from '../lib/providerPresets'
+import { getPresets, KIND_LABELS, type Preset } from '../lib/providerPresets'
 import type { Provider, ProviderHealth, ProviderKind } from '../types/api'
 import HealthBadge from './HealthBadge'
 import { EyeIcon, EyeOffIcon } from './icons'
@@ -11,6 +11,7 @@ interface Props {
   /** Omit to create a new provider. */
   provider?: Provider
   encryptionConfigured: boolean
+  inDocker: boolean
   onDone: () => void
   onCancel: () => void
 }
@@ -21,7 +22,14 @@ const label = 'mb-1 block text-sm font-medium'
 const secondaryButton =
   'rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'
 
-export default function ProviderForm({ provider, encryptionConfigured, onDone, onCancel }: Props) {
+export default function ProviderForm({
+  provider,
+  encryptionConfigured,
+  inDocker,
+  onDone,
+  onCancel,
+}: Props) {
+  const presets = getPresets(inDocker)
   const editing = !!provider
   const [kind, setKind] = useState<ProviderKind>(provider?.kind ?? 'openai_compat')
   const [name, setName] = useState(provider?.name ?? '')
@@ -37,7 +45,7 @@ export default function ProviderForm({ provider, encryptionConfigured, onDone, o
   const saving = create.isPending || update.isPending
   const saveError = create.error ?? update.error
 
-  const applyPreset = (preset: (typeof PRESETS)[number]) => {
+  const applyPreset = (preset: Preset) => {
     setKind(preset.kind)
     setName(preset.label)
     setBaseUrl(preset.base_url)
@@ -102,7 +110,7 @@ export default function ProviderForm({ provider, encryptionConfigured, onDone, o
         <div>
           <span className={label}>Quick start</span>
           <div className="flex flex-wrap gap-2">
-            {PRESETS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p.label}
                 type="button"
@@ -176,8 +184,14 @@ export default function ProviderForm({ provider, encryptionConfigured, onDone, o
         />
         <p className="mt-1 text-xs text-zinc-500">
           {kind === 'ollama'
-            ? 'The URL is reached from the backend. In Docker Compose use http://ollama:11434; for Ollama on your own machine use http://host.docker.internal:11434.'
-            : 'Usually ends in /v1. The backend calls {base URL}/models and {base URL}/chat/completions.'}
+            ? inDocker
+              ? 'Called from the backend container: use http://ollama:11434 for the bundled Ollama, or http://host.docker.internal:11434 for Ollama installed on your computer.'
+              : 'Called from the backend, e.g. http://localhost:11434.'
+            : `Usually ends in /v1. The backend calls {base URL}/models and {base URL}/chat/completions.${
+                inDocker
+                  ? ' For servers on your computer use host.docker.internal instead of localhost.'
+                  : ''
+              }`}
         </p>
       </div>
 

@@ -5,6 +5,16 @@ import react from '@vitejs/plugin-react'
 // In production builds, set VITE_API_URL to the backend's public URL instead.
 export default defineConfig({
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunk: app deploys don't invalidate the React cache.
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {
