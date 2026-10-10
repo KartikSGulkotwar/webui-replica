@@ -7,3 +7,57 @@ body,
 #root {
   height: 100%;
 }
+
+/* Blinking caret after the last streamed token. */
+.streaming-cursor .prose > :last-child::after {
+  content: '▍';
+  margin-left: 2px;
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* Syntax highlighting (highlight.js classes from rehype-highlight). */
+.hljs-comment,
+.hljs-quote {
+  @apply italic text-zinc-500;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in {
+  @apply text-purple-700 dark:text-purple-400;
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  @apply text-emerald-700 dark:text-emerald-400;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr {
+  @apply text-amber-700 dark:text-amber-300;
+}
+.hljs-title,
+.hljs-section,
+.hljs-function .hljs-title {
+  @apply text-blue-700 dark:text-blue-400;
+}
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-params {
+  @apply text-cyan-700 dark:text-cyan-300;
+}
+.hljs-meta,
+.hljs-tag,
+.hljs-name {
+  @apply text-pink-700 dark:text-pink-400;
+}
+.hljs-deletion {
+  @apply text-red-700 dark:text-red-400;
+}
