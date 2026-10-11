@@ -155,3 +155,22 @@ async def test_stream_chat_http_error(provider: OpenAICompatProvider) -> None:
     with pytest.raises(ProviderError, match="HTTP 500: upstream exploded"):
         async for _ in provider.stream_chat("m", [], ChatParams()):
             pass
+
+
+@respx.mock
+async def test_list_models_hides_non_chat_models(provider: OpenAICompatProvider) -> None:
+    ids = [
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "whisper-large-v3",
+        "canopylabs/orpheus-v1-english",
+        "meta-llama/llama-prompt-guard-2-22m",
+        "openai/gpt-oss-safeguard-20b",
+        "text-embedding-3-small",
+        "tts-1",
+        "dall-e-3",
+        "omni-moderation-latest",
+    ]
+    respx.get(f"{BASE}/models").respond(json={"data": [{"id": i} for i in ids]})
+    models = await provider.list_models()
+    assert [m.name for m in models] == ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]

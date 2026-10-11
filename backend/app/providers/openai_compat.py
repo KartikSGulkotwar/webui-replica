@@ -15,6 +15,25 @@ from app.schemas import ChatMessage, ChatParams, ModelInfo, ProviderKind, Stream
 
 DONE = object()  # sentinel for the "[DONE]" terminator
 
+# /models on OpenAI-style APIs also lists speech, embedding, image, and safety
+# models, which fail on /chat/completions. Hide them from the chat model menu.
+NON_CHAT_MARKERS = (
+    "whisper",
+    "transcribe",
+    "tts",
+    "orpheus",
+    "embed",
+    "moderation",
+    "guard",
+    "dall-e",
+    "gpt-image",
+)
+
+
+def is_chat_model(model_id: str) -> bool:
+    lowered = model_id.lower()
+    return not any(marker in lowered for marker in NON_CHAT_MARKERS)
+
 
 def parse_sse_line(line: str) -> StreamChunk | object | None:
     """Parse one line of an OpenAI-style SSE stream.
@@ -54,7 +73,7 @@ class OpenAICompatProvider(BaseProvider):
 
     async def list_models(self) -> list[ModelInfo]:
         data = await self._get_json("/models", headers=self._headers())
-        ids = [m["id"] for m in data.get("data", []) if m.get("id")]
+        ids = [m["id"] for m in data.get("data", []) if m.get("id") and is_chat_model(m["id"])]
         return [self._model_info(i) for i in sorted(ids)]
 
     async def stream_chat(
