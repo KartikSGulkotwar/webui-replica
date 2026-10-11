@@ -11,13 +11,15 @@ import { useConversation } from '../hooks/useConversation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
+import { useAppConfig } from '../hooks/useProviders'
 import { modelLabel } from '../lib/models'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
   const modelsQuery = useModels()
   const models = modelsQuery.data?.models
-  const { selected, select } = useSelectedModel(models)
+  const config = useAppConfig()
+  const { selected, select } = useSelectedModel(models, config.data?.default_model)
   const conversation = useConversation(id)
   const { pending, send, stop, isStreaming } = useChatStream(id)
   const { sidebarOpen, openSidebar } = useLayout()

@@ -35,6 +35,8 @@ class Conversation(SQLModel, table=True):
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
     title: str = Field(default=DEFAULT_TITLE, max_length=200)
+    # Anonymous browser ID (see app/owner.py); later, the user ID once accounts exist.
+    owner_id: str | None = Field(default=None, max_length=64, index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, index=True)
 

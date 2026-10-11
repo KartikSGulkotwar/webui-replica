@@ -61,6 +61,8 @@ Keep it somewhere safe. If it changes, stored API keys can no longer be decrypte
    | `OPENAI_COMPAT_API_KEY` | Groq key from step 2 |
    | `OLLAMA_BASE_URL` | `http://localhost:11434` (shows Ollama as a configured but offline provider, which is honest for a cloud demo) |
    | `PROVIDERS_READ_ONLY` | `true` |
+   | `ISOLATE_CHATS_BY_BROWSER` | `true` (visitors can't see each other's chats) |
+   | `DEFAULT_MODEL` | `groq:openai/gpt-oss-120b` (model new visitors start with) |
    | `AUTO_MIGRATE` | `false` |
    | `TRUSTED_PROXY_HOPS` | `1` |
    | `CHAT_RATE_LIMIT_PER_MINUTE` | `20` |

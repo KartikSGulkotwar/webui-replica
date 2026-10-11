@@ -165,3 +165,5 @@ class AppConfig(BaseModel):
     encryption_configured: bool
     # Lets the UI suggest URLs that work from inside a container.
     in_docker: bool
+    isolate_chats_by_browser: bool
+    default_model: str | None

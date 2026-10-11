@@ -10,6 +10,7 @@ from app import __version__
 from app.config import Settings, get_settings
 from app.crypto import KeyCipher
 from app.db import BACKEND_DIR, make_engine, run_migrations
+from app.owner import OwnerCookieMiddleware
 from app.providers.registry import ProviderRegistry
 from app.ratelimit import RateLimiter
 from app.routers import chat, conversations, health, models, providers
@@ -47,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         else None
     )
 
+    app.add_middleware(OwnerCookieMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

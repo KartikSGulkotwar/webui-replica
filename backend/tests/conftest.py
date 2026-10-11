@@ -23,6 +23,8 @@ def settings() -> Settings:
         chat_rate_limit_per_minute=0,
         trusted_proxy_hops=0,
         providers_read_only=False,
+        isolate_chats_by_browser=False,
+        default_model="",
         ollama_base_url="",
         openai_compat_base_url="",
         openai_compat_api_key="",

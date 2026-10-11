@@ -23,16 +23,18 @@ function readStored(): string | null {
 }
 
 /**
- * The model used for the next message. Remembered across reloads; falls back to
- * the first available model if the remembered one is gone.
+ * The model used for the next message. Remembered across reloads; otherwise the
+ * deployment's default model, then the first available one.
  */
-export function useSelectedModel(models: ModelInfo[] | undefined) {
+export function useSelectedModel(models: ModelInfo[] | undefined, defaultModel?: string | null) {
   const [stored, setStored] = useState<string | null>(readStored)
 
   const selected = useMemo(() => {
     if (!models || models.length === 0) return null
-    return models.find((m) => m.id === stored) ?? models[0]
-  }, [models, stored])
+    return (
+      models.find((m) => m.id === stored) ?? models.find((m) => m.id === defaultModel) ?? models[0]
+    )
+  }, [models, stored, defaultModel])
 
   useEffect(() => {
     try {

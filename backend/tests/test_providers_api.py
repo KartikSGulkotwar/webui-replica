@@ -178,6 +178,8 @@ def test_key_without_encryption_key_is_rejected(settings) -> None:
             "providers_read_only": False,
             "encryption_configured": False,
             "in_docker": False,
+            "isolate_chats_by_browser": False,
+            "default_model": None,
         }
 
 

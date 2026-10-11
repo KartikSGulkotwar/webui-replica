@@ -19,4 +19,6 @@ async def config(request: Request) -> AppConfig:
         providers_read_only=request.app.state.settings.providers_read_only,
         encryption_configured=request.app.state.cipher.configured,
         in_docker=Path("/.dockerenv").exists(),
+        isolate_chats_by_browser=request.app.state.settings.isolate_chats_by_browser,
+        default_model=request.app.state.settings.default_model or None,
     )

@@ -107,6 +107,8 @@ Backend environment variables (see [`backend/.env.example`](backend/.env.example
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s), comma-separated |
 | `OLLAMA_BASE_URL`, `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` | — | Providers created on first start, only while the providers table is empty |
 | `PROVIDERS_READ_ONLY` | `false` | Blocks provider changes. Use on public deployments, since there is no login |
+| `ISOLATE_CHATS_BY_BROWSER` | `false` | Each browser sees only its own conversations, via an anonymous cookie. Use on public deployments |
+| `DEFAULT_MODEL` | — | Model new visitors start with, e.g. `groq:openai/gpt-oss-120b` |
 | `CHAT_RATE_LIMIT_PER_MINUTE` | `20` | Messages per minute per client IP. `0` disables the limit |
 | `TRUSTED_PROXY_HOPS` | `0` | Number of proxies whose `X-Forwarded-For` entries are trusted (1 behind nginx or Vercel) |
 | `AUTO_MIGRATE` | `true` | Run migrations on startup. Vercel runs them during the build instead |

@@ -3,6 +3,7 @@ from sqlmodel import Session, col, delete, select
 
 from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
+from app.owner import Owner, OwnerDep
 from app.schemas import (
     ConversationCreate,
     ConversationDetail,
@@ -14,9 +15,11 @@ from app.schemas import (
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
-def get_conversation_or_404(session: Session, conversation_id: str) -> Conversation:
+def get_conversation_or_404(session: Session, conversation_id: str, owner: Owner) -> Conversation:
     conversation = session.get(Conversation, conversation_id)
-    if conversation is None:
+    # Someone else's conversation is reported as missing, not forbidden, so IDs
+    # can't be probed.
+    if conversation is None or (owner.scope is not None and conversation.owner_id != owner.scope):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
 
@@ -29,14 +32,20 @@ def list_messages(session: Session, conversation_id: str) -> list[Message]:
 
 
 @router.get("", response_model=list[ConversationRead])
-def list_conversations(session: SessionDep) -> list[Conversation]:
+def list_conversations(session: SessionDep, owner: OwnerDep) -> list[Conversation]:
     stmt = select(Conversation).order_by(col(Conversation.updated_at).desc())
+    if owner.scope is not None:
+        stmt = stmt.where(Conversation.owner_id == owner.scope)
     return list(session.exec(stmt).all())
 
 
 @router.post("", response_model=ConversationRead, status_code=status.HTTP_201_CREATED)
-def create_conversation(body: ConversationCreate, session: SessionDep) -> Conversation:
-    conversation = Conversation(title=(body.title or "").strip() or DEFAULT_TITLE)
+def create_conversation(
+    body: ConversationCreate, session: SessionDep, owner: OwnerDep
+) -> Conversation:
+    conversation = Conversation(
+        title=(body.title or "").strip() or DEFAULT_TITLE, owner_id=owner.id
+    )
     session.add(conversation)
     session.commit()
     session.refresh(conversation)
@@ -44,8 +53,10 @@ def create_conversation(body: ConversationCreate, session: SessionDep) -> Conver
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
-def get_conversation(conversation_id: str, session: SessionDep) -> ConversationDetail:
-    conversation = get_conversation_or_404(session, conversation_id)
+def get_conversation(
+    conversation_id: str, session: SessionDep, owner: OwnerDep
+) -> ConversationDetail:
+    conversation = get_conversation_or_404(session, conversation_id, owner)
     messages = list_messages(session, conversation_id)
     return ConversationDetail(
         **conversation.model_dump(),
@@ -55,9 +66,9 @@ def get_conversation(conversation_id: str, session: SessionDep) -> ConversationD
 
 @router.patch("/{conversation_id}", response_model=ConversationRead)
 def rename_conversation(
-    conversation_id: str, body: ConversationUpdate, session: SessionDep
+    conversation_id: str, body: ConversationUpdate, session: SessionDep, owner: OwnerDep
 ) -> Conversation:
-    conversation = get_conversation_or_404(session, conversation_id)
+    conversation = get_conversation_or_404(session, conversation_id, owner)
     title = body.title.strip()
     if not title:
         raise HTTPException(status_code=422, detail="Title cannot be blank")
@@ -70,8 +81,8 @@ def rename_conversation(
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_conversation(conversation_id: str, session: SessionDep) -> Response:
-    conversation = get_conversation_or_404(session, conversation_id)
+def delete_conversation(conversation_id: str, session: SessionDep, owner: OwnerDep) -> Response:
+    conversation = get_conversation_or_404(session, conversation_id, owner)
     # Delete messages explicitly: SQLite doesn't enforce ON DELETE CASCADE by default.
     session.exec(delete(Message).where(col(Message.conversation_id) == conversation_id))
     session.delete(conversation)

@@ -98,4 +98,6 @@ export interface AppConfig {
   providers_read_only: boolean
   encryption_configured: boolean
   in_docker: boolean
+  isolate_chats_by_browser: boolean
+  default_model: string | null
 }

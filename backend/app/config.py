@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     auto_migrate: bool = True
     # Public demos have no login, so lock provider management there.
     providers_read_only: bool = False
+    # Public demos without login: each browser only sees its own conversations.
+    isolate_chats_by_browser: bool = False
+    # Model preselected for visitors who haven't picked one, e.g. "groq:openai/gpt-oss-120b".
+    default_model: str = ""
     # Messages per minute per client IP on /api/chat/stream; 0 disables.
     chat_rate_limit_per_minute: int = 20
     # How many reverse proxies in front of the backend append to X-Forwarded-For
