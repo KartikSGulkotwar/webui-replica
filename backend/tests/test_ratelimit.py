@@ -1,51 +1,77 @@
 import json
+import os
 
 import pytest
 import respx
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel
+from sqlmodel import Session, SQLModel, select
 from starlette.requests import Request
 
+from app.db import make_engine
 from app.main import create_app
-from app.models import Provider
+from app.models import Provider, RateLimitBucket
 from app.ratelimit import RateLimiter, client_ip
 
 
 class FakeClock:
     def __init__(self) -> None:
-        self.now = 1000.0
+        self.now = 1_000_040.0  # 20s into the window starting at 1_000_020
 
     def __call__(self) -> float:
         return self.now
 
 
-def test_limiter_allows_up_to_limit_then_blocks() -> None:
+@pytest.fixture(params=["sqlite", "postgres"])
+def engine(request):
+    if request.param == "sqlite":
+        engine = make_engine("sqlite://")
+    else:
+        url = os.environ.get("TEST_POSTGRES_URL")
+        if not url:
+            pytest.skip("set TEST_POSTGRES_URL to run against Postgres")
+        engine = make_engine(url)
+        SQLModel.metadata.drop_all(engine, tables=[RateLimitBucket.__table__])
+    SQLModel.metadata.create_all(engine, tables=[RateLimitBucket.__table__])
+    yield engine
+    engine.dispose()
+
+
+def test_limiter_allows_up_to_limit_then_blocks(engine) -> None:
     clock = FakeClock()
-    limiter = RateLimiter(3, window=60, clock=clock)
+    limiter = RateLimiter(engine, 3, window=60, clock=clock)
     assert [limiter.hit("a") for _ in range(3)] == [None, None, None]
-    assert limiter.hit("a") == pytest.approx(60)
+    assert limiter.hit("a") == pytest.approx(40)  # window resets in 40s
     assert limiter.hit("b") is None  # other clients unaffected
 
 
-def test_limiter_window_slides() -> None:
+def test_limiter_resets_next_window(engine) -> None:
     clock = FakeClock()
-    limiter = RateLimiter(2, window=60, clock=clock)
-    limiter.hit("a")
-    clock.now += 30
-    limiter.hit("a")
-    assert limiter.hit("a") == pytest.approx(30)
-    clock.now += 30.1  # first hit expired
+    limiter = RateLimiter(engine, 1, window=60, clock=clock)
+    assert limiter.hit("a") is None
+    assert limiter.hit("a") is not None
+    clock.now += 40  # next window
     assert limiter.hit("a") is None
 
 
-def test_limiter_sweeps_idle_keys() -> None:
+def test_limiter_cleans_old_windows(engine, monkeypatch) -> None:
     clock = FakeClock()
-    limiter = RateLimiter(1, window=60, clock=clock)
-    for i in range(100):
-        limiter.hit(f"ip{i}")
-    clock.now += 61
+    limiter = RateLimiter(engine, 5, window=60, clock=clock)
+    limiter.hit("old")
+    clock.now += 120
+    monkeypatch.setattr("app.ratelimit.random.random", lambda: 0.0)
     limiter.hit("new")
-    assert list(limiter._hits) == ["new"]
+    with Session(engine) as session:
+        assert [r.key for r in session.exec(select(RateLimitBucket)).all()] == ["new"]
+
+
+def test_limiter_shared_between_instances(engine) -> None:
+    """Two limiters on one database act as one (separate serverless instances)."""
+    clock = FakeClock()
+    a = RateLimiter(engine, 2, window=60, clock=clock)
+    b = RateLimiter(engine, 2, window=60, clock=clock)
+    assert a.hit("ip") is None
+    assert b.hit("ip") is None
+    assert a.hit("ip") is not None
 
 
 def make_request(xff: str | None, peer: str = "10.0.0.1") -> Request:

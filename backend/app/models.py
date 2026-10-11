@@ -57,3 +57,14 @@ class Message(SQLModel, table=True):
     # Namespaced model that produced an assistant message; None for user/system.
     model_id: str | None = Field(default=None, max_length=300)
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class RateLimitBucket(SQLModel, table=True):
+    """Fixed-window hit counter per client. Lives in the database so the limit
+    holds across serverless instances."""
+
+    __tablename__ = "rate_limits"
+
+    key: str = Field(primary_key=True, max_length=100)
+    window_start: int = Field(primary_key=True)  # epoch seconds
+    count: int = Field(default=0)

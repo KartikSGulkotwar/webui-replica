@@ -14,3 +14,6 @@ __pycache__/
 node_modules/
 dist/
 *.tsbuildinfo
+
+# Frontend build copied in by app/vercel_build.py
+backend/static/

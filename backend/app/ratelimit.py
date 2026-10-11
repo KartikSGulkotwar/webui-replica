@@ -1,9 +1,16 @@
 import math
+import random
 import time
-from collections import deque
-from threading import Lock
+from collections.abc import Callable
 
 from fastapi import HTTPException, Request
+from sqlalchemy import Engine, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
+from app.models import RateLimitBucket
+
+INSERTS = {"postgresql": pg_insert, "sqlite": sqlite_insert}
 
 
 def client_ip(request: Request, trusted_proxy_hops: int) -> str:
@@ -23,37 +30,46 @@ def client_ip(request: Request, trusted_proxy_hops: int) -> str:
 
 
 class RateLimiter:
-    """In-memory sliding-window limiter: at most `limit` hits per `window` seconds
-    per key. Per process, which suits a single-instance demo."""
+    """At most `limit` hits per key in each fixed `window`, counted in the database
+    with an atomic upsert, so every process and serverless instance shares it."""
 
-    def __init__(self, limit: int, window: float = 60.0, clock=time.monotonic) -> None:
+    def __init__(
+        self,
+        engine: Engine,
+        limit: int,
+        window: int = 60,
+        clock: Callable[[], float] = time.time,
+    ) -> None:
+        insert = INSERTS.get(engine.dialect.name)
+        if insert is None:
+            raise ValueError(f"Rate limiting needs SQLite or Postgres, not {engine.dialect.name}")
+        self._insert = insert
+        self.engine = engine
         self.limit = limit
         self.window = window
         self._clock = clock
-        self._hits: dict[str, deque[float]] = {}
-        self._lock = Lock()
-        self._last_sweep = clock()
 
     def hit(self, key: str) -> float | None:
-        """Record a hit. Returns None if allowed, else seconds until a slot frees up."""
+        """Record a hit. Returns None if allowed, else seconds until the window resets."""
         now = self._clock()
-        with self._lock:
-            self._sweep(now)
-            hits = self._hits.setdefault(key, deque())
-            while hits and hits[0] <= now - self.window:
-                hits.popleft()
-            if len(hits) >= self.limit:
-                return hits[0] + self.window - now
-            hits.append(now)
-            return None
-
-    def _sweep(self, now: float) -> None:
-        # Drop idle keys now and then so memory doesn't grow with every visitor.
-        if now - self._last_sweep < self.window:
-            return
-        self._last_sweep = now
-        for key in [k for k, v in self._hits.items() if not v or v[-1] <= now - self.window]:
-            del self._hits[key]
+        start = int(now // self.window * self.window)
+        table = RateLimitBucket.__table__
+        stmt = (
+            self._insert(table)
+            .values(key=key[:100], window_start=start, count=1)
+            .on_conflict_do_update(
+                index_elements=["key", "window_start"], set_={"count": table.c.count + 1}
+            )
+            .returning(table.c.count)
+        )
+        with self.engine.begin() as conn:
+            count = conn.execute(stmt).scalar_one()
+            # Occasionally drop finished windows so the table stays small.
+            if random.random() < 0.05:
+                conn.execute(delete(table).where(table.c.window_start < start))
+        if count > self.limit:
+            return start + self.window - now
+        return None
 
 
 def limit_chat(request: Request) -> None:

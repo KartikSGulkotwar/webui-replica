@@ -46,3 +46,18 @@ def test_cipher_wrong_key() -> None:
     token = KeyCipher(Fernet.generate_key().decode()).encrypt("x")
     with pytest.raises(EncryptionError, match="cannot be decrypted"):
         KeyCipher(Fernet.generate_key().decode()).decrypt(token)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("postgresql://u:p@h/db?sslmode=require", "postgresql+psycopg://u:p@h/db?sslmode=require"),
+        ("postgres://u:p@h/db", "postgresql+psycopg://u:p@h/db"),
+        ("postgresql+psycopg://u:p@h/db", "postgresql+psycopg://u:p@h/db"),
+        ("sqlite:///./webui.db", "sqlite:///./webui.db"),
+    ],
+)
+def test_database_url_uses_psycopg3(url: str, expected: str) -> None:
+    from app.config import Settings
+
+    assert Settings(_env_file=None, database_url=url).database_url == expected

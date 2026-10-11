@@ -2,6 +2,7 @@ import logging
 import re
 from urllib.parse import urlparse
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.config import Settings
@@ -58,7 +59,12 @@ def seed_providers(session: Session, settings: Settings, cipher: KeyCipher) -> l
         )
     for row in rows:
         session.add(row)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Another instance seeded at the same moment (serverless cold starts).
+        session.rollback()
+        return []
     if rows:
         logger.info("Seeded providers: %s", ", ".join(r.id for r in rows))
     return [r.id for r in rows]
