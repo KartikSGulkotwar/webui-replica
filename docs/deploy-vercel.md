@@ -105,6 +105,17 @@ DATABASE_URL='<neon url>' ENCRYPTION_KEY='<same key>' PROVIDERS_READ_ONLY=false 
 # in another terminal: cd frontend && npm run dev → http://localhost:5173/settings
 ```
 
+If you keep the demo's values in the root `.env` as `VERCEL_DATABASE_URL` and
+`VERCEL_ENCRYPTION_KEY` (Vercel can't display sensitive values again), this does
+the same without copying them by hand:
+
+```bash
+cd backend
+DATABASE_URL="$(grep '^VERCEL_DATABASE_URL=' ../.env | cut -d= -f2-)" \
+ENCRYPTION_KEY="$(grep '^VERCEL_ENCRYPTION_KEY=' ../.env | cut -d= -f2-)" \
+PROVIDERS_READ_ONLY=false .venv/bin/uvicorn app.main:app --port 8000
+```
+
 Changes take effect on the live site immediately.
 
 ## Limits to know about
