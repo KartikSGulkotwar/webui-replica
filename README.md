@@ -2,7 +2,7 @@
 
 A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible API** (Groq, OpenRouter, OpenAI, Together, LM Studio, vLLM) from one interface. Replies stream in as they're written, and you can switch providers in the middle of a conversation.
 
-**Live demo:** _coming soon_ · runs on Groq's free tier, so Ollama shows as configured but offline (it needs a machine you control). For the full experience, run it locally with `docker compose up`.
+**Live demo: [webui-replica.vercel.app](https://webui-replica.vercel.app)** · runs on Groq's free tier, so Ollama shows as configured but offline (it needs a machine you control). For the full experience, run it locally with `docker compose up`.
 
 ![Switching from Ollama to an OpenAI-compatible provider in the same conversation](docs/images/provider-switch.gif)
 
