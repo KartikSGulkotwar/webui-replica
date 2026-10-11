@@ -1,19 +1,24 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { errorMessage } from '../api/client'
+import { rateMessage } from '../api/conversations'
+import ChatMenu from '../components/ChatMenu'
 import ChatWindow from '../components/ChatWindow'
 import Composer from '../components/Composer'
 import { MenuIcon, PlusIcon } from '../components/icons'
 import MessageBubble from '../components/MessageBubble'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
-import { useChatStream } from '../hooks/useChatStream'
+import { expectedCount, useChatStream } from '../hooks/useChatStream'
 import { useMe } from '../hooks/useAuth'
-import { useConversation } from '../hooks/useConversation'
+import { conversationKey, useConversation } from '../hooks/useConversation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { useAppConfig } from '../hooks/useProviders'
 import { modelLabel } from '../lib/models'
+import type { ConversationDetail, Rating } from '../types/api'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
@@ -23,7 +28,30 @@ export default function ChatPage() {
   const me = useMe()
   const { selected, select } = useSelectedModel(models, config.data?.default_model)
   const conversation = useConversation(id)
-  const { pending, send, stop, isStreaming } = useChatStream(id)
+  const { pending, run, stop, isStreaming } = useChatStream(id)
+  const queryClient = useQueryClient()
+  // System prompt chosen before the first message, when the chat doesn't exist yet.
+  const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
+  const labelFor = useCallback(
+    (modelId: string) => {
+      const l = modelLabel(modelId, models)
+      return l.provider ? `${l.name} (${l.provider})` : l.name
+    },
+    [models],
+  )
+
+  const rate = useMutation({
+    mutationFn: (v: { messageId: number; rating: Rating | null; comment?: string }) =>
+      rateMessage(id!, v.messageId, v.rating, v.comment),
+    onMutate: ({ messageId, rating }) => {
+      queryClient.setQueryData<ConversationDetail>(conversationKey(id!), (d) =>
+        d
+          ? { ...d, messages: d.messages.map((m) => (m.id === messageId ? { ...m, rating } : m)) }
+          : d,
+      )
+    },
+    onError: () => queryClient.invalidateQueries({ queryKey: conversationKey(id!) }),
+  })
   const { sidebarOpen, openSidebar } = useLayout()
   useDocumentTitle(id ? conversation.data?.title : undefined)
 
@@ -32,9 +60,18 @@ export default function ChatPage() {
   const p = pending && pending.conversationId === (id ?? '') ? pending : null
   // Show the local copy of an exchange until the refetched conversation contains it.
   const showPendingUser =
-    !!p && !p.notSent && p.conversationId !== '' && serverMessages.length < p.baseCount + 1
+    !!p &&
+    p.kind === 'send' &&
+    !p.notSent &&
+    p.conversationId !== '' &&
+    serverMessages.length < p.baseCount + 1
   const showPendingAssistant =
-    !!p && (p.status === 'streaming' || (p.text !== '' && serverMessages.length < p.baseCount + 2))
+    !!p && (p.status === 'streaming' || (p.text !== '' && serverMessages.length < expectedCount(p)))
+  const lastAssistantId = [...serverMessages].reverse().find((m) => m.role === 'assistant')?.id
+  const lastMessage = serverMessages.at(-1)
+  // A question whose reply failed or was never written can be answered again.
+  const canRetry =
+    !isStreaming && !!selected && lastMessage?.role === 'user' && !showPendingAssistant
   const pendingError = p?.status === 'error' ? p.error : null
 
   const selectedProviderOk =
@@ -76,6 +113,14 @@ export default function ChatPage() {
         <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500">
           {conversation.data?.title}
         </div>
+        {!notFound && (
+          <ChatMenu
+            conversation={id ? conversation.data : undefined}
+            draftSystemPrompt={draftSystemPrompt}
+            onDraftSystemPrompt={setDraftSystemPrompt}
+            modelLabel={labelFor}
+          />
+        )}
         {!sidebarOpen && (
           <Link
             to="/"
@@ -108,6 +153,12 @@ export default function ChatPage() {
               ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
               : (disabledReason ?? '')}
           </p>
+          {draftSystemPrompt && (
+            <p className="max-w-md text-xs text-indigo-500">
+              System prompt set: “{draftSystemPrompt.slice(0, 80)}
+              {draftSystemPrompt.length > 80 ? '…' : ''}”
+            </p>
+          )}
           {pendingError && <p className="text-sm text-red-500">{pendingError}</p>}
         </div>
       ) : (
@@ -122,6 +173,25 @@ export default function ChatPage() {
               content={m.content}
               model={
                 m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined
+              }
+              actions={
+                m.role === 'assistant'
+                  ? {
+                      rating: m.rating,
+                      onRate: (rating, comment) =>
+                        rate.mutate({ messageId: m.id, rating, comment }),
+                      onRegenerate:
+                        m.id === lastAssistantId && selected
+                          ? () => run({ kind: 'regenerate' }, selected.id)
+                          : undefined,
+                      busy: isStreaming || !selected,
+                    }
+                  : {
+                      onEdit: selected
+                        ? (content) => run({ kind: 'edit', messageId: m.id, content }, selected.id)
+                        : undefined,
+                      busy: isStreaming,
+                    }
               }
             />
           ))}
@@ -139,11 +209,24 @@ export default function ChatPage() {
               {pendingError}
             </div>
           )}
+          {canRetry && (
+            <button
+              type="button"
+              onClick={() => run({ kind: 'regenerate' }, selected!.id)}
+              className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Get a reply
+            </button>
+          )}
         </ChatWindow>
       )}
 
       <Composer
-        onSend={(text) => selected && send(text, selected.id)}
+        onSend={(text) => {
+          if (!selected) return
+          run({ kind: 'send', content: text }, selected.id, id ? undefined : draftSystemPrompt)
+          if (!id) setDraftSystemPrompt('')
+        }}
         onStop={stop}
         restoreText={p?.notSent ? p.userContent : undefined}
         isStreaming={isStreaming}

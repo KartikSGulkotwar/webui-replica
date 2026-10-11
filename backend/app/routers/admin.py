@@ -4,7 +4,7 @@ from sqlmodel import col, delete, select
 from app.app_settings import get_admin_settings, save_admin_settings
 from app.auth import AdminUserDep
 from app.db import SessionDep
-from app.models import Conversation, Message, OAuthAccount, User
+from app.models import Conversation, Message, OAuthAccount, SharedChat, User
 from app.routers.auth import to_read
 from app.schemas import AdminSettings, AdminUserUpdate, UserRead
 
@@ -46,6 +46,7 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     conversation_ids = select(Conversation.id).where(Conversation.owner_id == user.id)
     # Explicit deletes: SQLite doesn't enforce ON DELETE CASCADE by default.
     session.exec(delete(Message).where(col(Message.conversation_id).in_(conversation_ids)))
+    session.exec(delete(SharedChat).where(col(SharedChat.conversation_id).in_(conversation_ids)))
     session.exec(delete(Conversation).where(Conversation.owner_id == user.id))
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     session.delete(user)

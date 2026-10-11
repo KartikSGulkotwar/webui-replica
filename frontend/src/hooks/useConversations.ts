@@ -1,54 +1,75 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deleteConversation, listConversations, renameConversation } from '../api/conversations'
-import type { Conversation, ConversationDetail } from '../types/api'
+import { deleteConversation, listConversations, updateConversation } from '../api/conversations'
+import type { Conversation, ConversationDetail, ConversationPatch } from '../types/api'
 import { conversationKey } from './useConversation'
 
 export const conversationsKey = ['conversations'] as const
 
-export function useConversations() {
-  return useQuery({ queryKey: conversationsKey, queryFn: listConversations })
+/** The sidebar list (archived=false), archived chats, or search results (q). */
+export function useConversations(params: { q?: string; archived?: boolean } = {}) {
+  return useQuery({
+    queryKey: [...conversationsKey, params.archived ? 'archived' : 'active', params.q ?? ''],
+    queryFn: () => listConversations(params),
+    placeholderData: (prev) => prev,
+  })
 }
 
-/** Optimistically apply `change` to the list; roll back if the request fails. */
-function useListMutation<V>(
-  mutationFn: (vars: V) => Promise<unknown>,
-  change: (list: Conversation[], vars: V) => Conversation[],
-  onSuccess?: (vars: V) => void,
-) {
+/** Patch a conversation, updating every cached list and its detail right away. */
+export function useUpdateConversation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn,
-    onMutate: async (vars: V) => {
+    mutationFn: ({ id, patch }: { id: string; patch: ConversationPatch }) =>
+      updateConversation(id, patch),
+    onMutate: async ({ id, patch }) => {
       await queryClient.cancelQueries({ queryKey: conversationsKey })
-      const previous = queryClient.getQueryData<Conversation[]>(conversationsKey)
-      if (previous) queryClient.setQueryData(conversationsKey, change(previous, vars))
+      const previous = queryClient.getQueriesData<Conversation[]>({ queryKey: conversationsKey })
+      // The list doesn't carry the system prompt, so only copy the other fields.
+      const listPatch = Object.fromEntries(
+        Object.entries(patch).filter(
+          ([key, value]) => key !== 'system_prompt' && value !== undefined,
+        ),
+      ) as Partial<Conversation>
+      queryClient.setQueriesData<Conversation[]>({ queryKey: conversationsKey }, (list) =>
+        list?.map((c) => (c.id === id ? { ...c, ...listPatch } : c)),
+      )
       return { previous }
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.previous) queryClient.setQueryData(conversationsKey, ctx.previous)
+      ctx?.previous.forEach(([key, data]) => queryClient.setQueryData(key, data))
     },
-    onSuccess: (_data, vars) => onSuccess?.(vars),
+    onSuccess: (_data, { id, patch }) => {
+      queryClient.setQueryData<ConversationDetail>(conversationKey(id), (d) =>
+        d
+          ? {
+              ...d,
+              ...patch,
+              system_prompt:
+                patch.system_prompt === undefined ? d.system_prompt : patch.system_prompt || null,
+            }
+          : d,
+      )
+    },
+    // Pinning or archiving moves chats between lists, so refetch them all.
     onSettled: () => queryClient.invalidateQueries({ queryKey: conversationsKey }),
   })
 }
 
-export function useRenameConversation() {
-  const queryClient = useQueryClient()
-  return useListMutation(
-    ({ id, title }: { id: string; title: string }) => renameConversation(id, title),
-    (list, { id, title }) => list.map((c) => (c.id === id ? { ...c, title } : c)),
-    ({ id, title }) =>
-      queryClient.setQueryData<ConversationDetail>(conversationKey(id), (d) =>
-        d ? { ...d, title } : d,
-      ),
-  )
-}
-
 export function useDeleteConversation() {
   const queryClient = useQueryClient()
-  return useListMutation(
-    (id: string) => deleteConversation(id),
-    (list, id) => list.filter((c) => c.id !== id),
-    (id) => queryClient.removeQueries({ queryKey: conversationKey(id) }),
-  )
+  return useMutation({
+    mutationFn: (id: string) => deleteConversation(id),
+    onMutate: async (id) => {
+      await queryClient.cancelQueries({ queryKey: conversationsKey })
+      const previous = queryClient.getQueriesData<Conversation[]>({ queryKey: conversationsKey })
+      queryClient.setQueriesData<Conversation[]>({ queryKey: conversationsKey }, (list) =>
+        list?.filter((c) => c.id !== id),
+      )
+      return { previous }
+    },
+    onError: (_err, _id, ctx) => {
+      ctx?.previous.forEach(([key, data]) => queryClient.setQueryData(key, data))
+    },
+    onSuccess: (_data, id) => queryClient.removeQueries({ queryKey: conversationKey(id) }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: conversationsKey }),
+  })
 }

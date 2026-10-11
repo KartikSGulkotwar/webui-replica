@@ -43,6 +43,9 @@ export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
           <Link to="/account" onClick={go} className={item} role="menuitem">
             Account
           </Link>
+          <Link to="/archived" onClick={go} className={item} role="menuitem">
+            Archived chats
+          </Link>
           {user.role === 'admin' && (
             <Link to="/admin/users" onClick={go} className={item} role="menuitem">
               <SettingsIcon />

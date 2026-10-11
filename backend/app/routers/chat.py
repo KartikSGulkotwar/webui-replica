@@ -128,11 +128,30 @@ async def chat_stream(
     except ProviderError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # Persist the user message before calling the model.
-    is_first = not any(m.role == "user" for m in list_messages(session, conversation.id))
-    session.add(Message(conversation_id=conversation.id, role="user", content=body.message))
-    if is_first and conversation.title == DEFAULT_TITLE:
-        conversation.title = make_title(body.message)
+    messages = list_messages(session, conversation.id)
+    if body.action == "send":
+        # Persist the user message before calling the model.
+        is_first = not any(m.role == "user" for m in messages)
+        session.add(Message(conversation_id=conversation.id, role="user", content=body.message))
+        if is_first and conversation.title == DEFAULT_TITLE:
+            conversation.title = make_title(body.message or "")
+    elif body.action == "regenerate":
+        # Replace the last reply (if there is one) with a new one, possibly from
+        # a different model.
+        if messages and messages[-1].role == "assistant":
+            session.delete(messages.pop())
+        if not messages or messages[-1].role != "user":
+            raise HTTPException(status_code=400, detail="There's no message to reply to")
+    else:  # edit
+        target = next((m for m in messages if m.id == body.message_id and m.role == "user"), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Message not found")
+        # The conversation continues from the edited message: later turns are dropped.
+        for m in messages:
+            if m.id > target.id:
+                session.delete(m)
+        target.content = body.message or ""
+        session.add(target)
     conversation.updated_at = utcnow()
     session.add(conversation)
     session.commit()
@@ -141,6 +160,8 @@ async def chat_stream(
         ChatMessage(role=m.role, content=m.content)  # type: ignore[arg-type]
         for m in list_messages(session, conversation.id)
     ]
+    if conversation.system_prompt:
+        history.insert(0, ChatMessage(role="system", content=conversation.system_prompt))
 
     return StreamingResponse(
         stream_and_persist(

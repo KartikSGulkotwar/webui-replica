@@ -11,7 +11,11 @@ A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible A
 - **Two provider types, one model menu.** Models from every enabled provider are grouped by provider, each with a live health dot.
 - **Switch models mid-conversation.** The next message goes to the newly selected model with the full history, and each reply is labelled with the model and provider that wrote it.
 - **Streaming with Stop.** Tokens appear as they're generated. Stopping keeps the partial answer.
-- **Markdown and code.** GitHub-flavoured Markdown, syntax highlighting, and a copy button on code blocks.
+- **Markdown, code, and math.** GitHub-flavoured Markdown, syntax highlighting with a copy button, and LaTeX formulas (KaTeX loads only for messages that contain math).
+- **Work with replies.** Copy, regenerate (optionally with a different model), edit and resend an earlier message, and rate replies 👍/👎 with an optional comment.
+- **Per-chat system prompt.** Give a chat standing instructions, even before the first message.
+- **Organise and find chats.** Full-text search across titles and messages (with matching snippets), pin, archive and restore.
+- **Share and export.** Share a read-only public snapshot by link (later messages stay private until you update it), export a chat as Markdown or JSON, or export every chat at once.
 - **Conversation history.** Chats are saved and grouped by date, with auto-titles, inline rename, and delete.
 - **Provider settings in the browser.** Add, edit, enable/disable, and delete providers, and test a connection before saving. Presets cover common services.
 - **Encrypted API keys.** Keys are encrypted at rest and never sent back to the browser.

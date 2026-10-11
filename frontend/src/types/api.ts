@@ -32,20 +32,51 @@ export type Role = 'system' | 'user' | 'assistant'
 export interface Conversation {
   id: string
   title: string
+  pinned: boolean
+  archived: boolean
+  shared: boolean
+  /** Search results only: excerpt of the first matching message. */
+  snippet?: string | null
   created_at: string
   updated_at: string
 }
+
+export interface ConversationPatch {
+  title?: string
+  /** "" clears it. */
+  system_prompt?: string
+  pinned?: boolean
+  archived?: boolean
+}
+
+export type Rating = 1 | -1
 
 export interface Message {
   id: number
   role: Role
   content: string
   model_id: string | null
+  rating?: Rating | null
+  rating_comment?: string | null
   created_at: string
 }
 
 export interface ConversationDetail extends Conversation {
+  system_prompt: string | null
+  share_id: string | null
   messages: Message[]
+}
+
+export interface ShareInfo {
+  share_id: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SharedChat {
+  title: string
+  messages: { role: Role; content: string; model_id: string | null }[]
+  updated_at: string
 }
 
 export interface Usage {
@@ -62,7 +93,9 @@ export type StreamEvent =
 export interface ChatStreamRequest {
   conversation_id: string
   model_id: string
-  message: string
+  action?: 'send' | 'regenerate' | 'edit'
+  message?: string
+  message_id?: number
 }
 
 export interface Provider {

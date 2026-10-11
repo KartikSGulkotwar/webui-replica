@@ -6,9 +6,11 @@ import Layout from './components/Layout'
 import AuthPage from './pages/AuthPage'
 import ChatPage from './pages/ChatPage'
 import NotFoundPage from './pages/NotFoundPage'
+import SharedPage from './pages/SharedPage'
 
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
+const ArchivedPage = lazy(() => import('./pages/ArchivedPage'))
 
 function Lazy({ children }: { children: ReactNode }) {
   return (
@@ -23,6 +25,8 @@ export default function App() {
     <ErrorBoundary>
       <Routes>
         <Route path="/auth" element={<AuthPage />} />
+        {/* Public: shared links work without signing in. */}
+        <Route path="/s/:shareId" element={<SharedPage />} />
         <Route
           element={
             <AuthGate>
@@ -39,6 +43,14 @@ export default function App() {
             element={
               <Lazy>
                 <AccountPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/archived"
+            element={
+              <Lazy>
+                <ArchivedPage />
               </Lazy>
             }
           />

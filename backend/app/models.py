@@ -37,6 +37,10 @@ class Conversation(SQLModel, table=True):
     title: str = Field(default=DEFAULT_TITLE, max_length=200)
     # ID of the user who owns the conversation.
     owner_id: str | None = Field(default=None, max_length=64, index=True)
+    # Sent to the model as a "system" message ahead of the history.
+    system_prompt: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    pinned: bool = Field(default=False)
+    archived: bool = Field(default=False)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, index=True)
 
@@ -58,6 +62,9 @@ class Message(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text, nullable=False))
     # Namespaced model that produced an assistant message; None for user/system.
     model_id: str | None = Field(default=None, max_length=300)
+    # User feedback on an assistant reply: 1 (good), -1 (bad), or None.
+    rating: int | None = Field(default=None)
+    rating_comment: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -112,3 +119,27 @@ class AppSetting(SQLModel, table=True):
 
     key: str = Field(primary_key=True, max_length=100)
     value: str = Field(sa_column=Column(Text, nullable=False))
+
+
+class SharedChat(SQLModel, table=True):
+    """A read-only snapshot of a conversation, viewable by anyone with the link.
+
+    A snapshot (not a live view) so messages added after sharing stay private
+    until the owner shares again.
+    """
+
+    __tablename__ = "shared_chats"
+
+    id: str = Field(primary_key=True, max_length=43)  # the unguessable link token
+    conversation_id: str = Field(
+        sa_column=Column(
+            String(32),
+            ForeignKey("conversations.id", ondelete="CASCADE"),
+            nullable=False,
+            unique=True,
+        )
+    )
+    title: str = Field(max_length=200)
+    messages_json: str = Field(sa_column=Column(Text, nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

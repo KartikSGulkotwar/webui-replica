@@ -4,24 +4,36 @@ import { useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import { createConversation, deleteConversation } from '../api/conversations'
 import { streamChat } from '../api/stream'
-import type { ConversationDetail } from '../types/api'
+import type { ChatStreamRequest, ConversationDetail } from '../types/api'
 import { conversationKey } from './useConversation'
 
 export type StreamStatus = 'streaming' | 'done' | 'stopped' | 'error'
 
+export type ChatAction =
+  | { kind: 'send'; content: string }
+  /** Replace the last reply (optionally with another model). */
+  | { kind: 'regenerate' }
+  /** Change an earlier message; everything after it is dropped. */
+  | { kind: 'edit'; messageId: number; content: string }
+
 /** The in-flight exchange, shown until the saved messages come back from the server. */
 export interface PendingExchange {
   conversationId: string
-  /** Server message count when this exchange started. */
+  kind: ChatAction['kind']
+  /** Server messages kept before this exchange (after regenerate/edit trimmed the rest). */
   baseCount: number
+  /** The new user message (send only). */
   userContent: string
   modelId: string
   text: string
   status: StreamStatus
   error?: string
-  /** Rejected before the backend stored it (rate limit, bad model…): the text goes back to the composer. */
+  /** A send rejected before the backend stored it (rate limit, bad model…): the text goes back to the composer. */
   notSent?: boolean
 }
+
+/** How many server messages there will be once this exchange is saved. */
+export const expectedCount = (p: PendingExchange) => p.baseCount + (p.kind === 'send' ? 2 : 1)
 
 export function useChatStream(conversationId: string | undefined) {
   const queryClient = useQueryClient()
@@ -38,19 +50,23 @@ export function useChatStream(conversationId: string | undefined) {
     }
   }, [conversationId])
 
-  const send = useCallback(
-    async (content: string, modelId: string) => {
+  const run = useCallback(
+    async (action: ChatAction, modelId: string, newChatSystemPrompt?: string) => {
       if (abortRef.current) return
+      if (!conversationId && action.kind !== 'send') return
       const controller = new AbortController()
       abortRef.current = controller
+      const userContent = action.kind === 'send' ? action.content : ''
 
       let convId = conversationId
       try {
         if (!convId) {
-          const conv = await createConversation()
+          const conv = await createConversation({ system_prompt: newChatSystemPrompt || undefined })
           convId = conv.id
           queryClient.setQueryData<ConversationDetail>(conversationKey(conv.id), {
             ...conv,
+            system_prompt: newChatSystemPrompt || null,
+            share_id: null,
             messages: [],
           })
           streamingConvRef.current = conv.id
@@ -60,8 +76,9 @@ export function useChatStream(conversationId: string | undefined) {
         abortRef.current = null
         setPending({
           conversationId: '',
+          kind: 'send',
           baseCount: 0,
-          userContent: content,
+          userContent,
           modelId,
           text: '',
           status: 'error',
@@ -75,44 +92,67 @@ export function useChatStream(conversationId: string | undefined) {
       let opened = false
       const id = convId
       streamingConvRef.current = id
-      const baseCount =
-        queryClient.getQueryData<ConversationDetail>(conversationKey(id))?.messages.length ?? 0
+
+      // Regenerate/edit: trim the cached conversation the same way the server
+      // will, so the old reply disappears immediately.
+      const before = queryClient.getQueryData<ConversationDetail>(conversationKey(id))
+      let kept = before?.messages ?? []
+      if (action.kind === 'regenerate' && kept.at(-1)?.role === 'assistant')
+        kept = kept.slice(0, -1)
+      if (action.kind === 'edit') {
+        const i = kept.findIndex((m) => m.id === action.messageId)
+        if (i >= 0) kept = [...kept.slice(0, i), { ...kept[i], content: action.content }]
+      }
+      if (before && action.kind !== 'send') {
+        queryClient.setQueryData<ConversationDetail>(conversationKey(id), {
+          ...before,
+          messages: kept,
+        })
+      }
+      const baseCount = kept.length
       setPending({
         conversationId: id,
+        kind: action.kind,
         baseCount,
-        userContent: content,
+        userContent,
         modelId,
         text: '',
         status: 'streaming',
       })
+
+      const body: ChatStreamRequest = { conversation_id: id, model_id: modelId }
+      if (action.kind === 'send') body.message = action.content
+      if (action.kind === 'regenerate') body.action = 'regenerate'
+      if (action.kind === 'edit') {
+        body.action = 'edit'
+        body.message_id = action.messageId
+        body.message = action.content
+      }
 
       let final: { status: StreamStatus; error?: string } | null = null
       const update = (patch: Partial<PendingExchange>) =>
         setPending((p) => (p && p.conversationId === id ? { ...p, ...patch } : p))
 
       try {
-        await streamChat(
-          { conversation_id: id, model_id: modelId, message: content },
-          {
-            signal: controller.signal,
-            // The backend has saved the message and set the title; show it in the sidebar now.
-            onOpen: () => {
-              opened = true
-              queryClient.invalidateQueries({ queryKey: ['conversations'] })
-            },
-            onEvent: (event) => {
-              if ('delta' in event) {
-                setPending((p) =>
-                  p && p.conversationId === id ? { ...p, text: p.text + event.delta } : p,
-                )
-              } else if ('error' in event) {
-                final = { status: 'error', error: event.error }
-              } else if ('done' in event) {
-                final = { status: 'done' }
-              }
-            },
+        await streamChat(body, {
+          signal: controller.signal,
+          // The backend has saved the message and set the title; show it in the sidebar now.
+          onOpen: () => {
+            opened = true
+            queryClient.invalidateQueries({ queryKey: ['conversations'] })
           },
-        )
+          onEvent: (event) => {
+            if ('delta' in event) {
+              setPending((p) =>
+                p && p.conversationId === id ? { ...p, text: p.text + event.delta } : p,
+              )
+            } else if ('error' in event) {
+              final = { status: 'error', error: event.error }
+            } else if ('done' in event) {
+              final = { status: 'done' }
+            }
+          },
+        })
         final ??= { status: 'error', error: 'The connection closed before the reply finished' }
       } catch (err) {
         final = controller.signal.aborted
@@ -129,16 +169,20 @@ export function useChatStream(conversationId: string | undefined) {
           deleteConversation(id).catch(() => {})
           queryClient.removeQueries({ queryKey: conversationKey(id) })
           navigate('/', { replace: true })
+        } else if (action.kind !== 'send') {
+          // Nothing changed on the server: bring back what we trimmed.
+          await queryClient.invalidateQueries({ queryKey: conversationKey(id) })
         }
         setPending({
           conversationId: createdHere ? '' : id,
-          baseCount,
-          userContent: content,
+          kind: action.kind,
+          baseCount: action.kind === 'send' ? baseCount : (before?.messages.length ?? 0),
+          userContent,
           modelId,
           text: '',
           status: 'error',
           error: final.error,
-          notSent: true,
+          notSent: action.kind === 'send',
         })
         queryClient.invalidateQueries({ queryKey: ['conversations'] })
         return
@@ -159,5 +203,5 @@ export function useChatStream(conversationId: string | undefined) {
 
   const stop = useCallback(() => abortRef.current?.abort(), [])
 
-  return { pending, send, stop, isStreaming: pending?.status === 'streaming' }
+  return { pending, run, stop, isStreaming: pending?.status === 'streaming' }
 }

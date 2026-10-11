@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 ProviderKind = Literal["ollama", "openai_compat"]
 Role = Literal["system", "user", "assistant"]
@@ -58,15 +58,26 @@ class ModelsResponse(BaseModel):
 
 class ConversationCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
+    system_prompt: str | None = Field(default=None, max_length=10_000)
 
 
 class ConversationUpdate(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
+    """Omitted fields are unchanged. system_prompt "" clears it."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    system_prompt: str | None = Field(default=None, max_length=10_000)
+    pinned: bool | None = None
+    archived: bool | None = None
 
 
 class ConversationRead(BaseModel):
     id: str
     title: str
+    pinned: bool
+    archived: bool
+    shared: bool = False
+    # Search results only: an excerpt of the first message that matched.
+    snippet: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -76,21 +87,61 @@ class MessageRead(BaseModel):
     role: Role
     content: str
     model_id: str | None
+    rating: Literal[1, -1] | None = None
+    rating_comment: str | None = None
     created_at: datetime
 
 
 class ConversationDetail(ConversationRead):
+    system_prompt: str | None
+    share_id: str | None = None
     messages: list[MessageRead]
+
+
+class RatingUpdate(BaseModel):
+    rating: Literal[1, -1] | None
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class ShareRead(BaseModel):
+    share_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class SharedMessage(BaseModel):
+    role: Role
+    content: str
+    model_id: str | None
+
+
+class SharedChatRead(BaseModel):
+    title: str
+    messages: list[SharedMessage]
+    updated_at: datetime
 
 
 # --- chat -------------------------------------------------------------------
 
 
 class ChatStreamRequest(BaseModel):
+    """send: add `message` and reply. regenerate: replace the last reply.
+    edit: change user message `message_id` to `message`, drop everything after it, reply."""
+
     conversation_id: str
     model_id: str = Field(min_length=3, description='Namespaced, e.g. "ollama:llama3.2:1b"')
-    message: str = Field(min_length=1, max_length=100_000)
+    action: Literal["send", "regenerate", "edit"] = "send"
+    message: str | None = Field(default=None, min_length=1, max_length=100_000)
+    message_id: int | None = None
     params: ChatParams = Field(default_factory=ChatParams)
+
+    @model_validator(mode="after")
+    def _check_action(self) -> "ChatStreamRequest":
+        if self.action in ("send", "edit") and not self.message:
+            raise ValueError(f"'message' is required for {self.action}")
+        if self.action == "edit" and self.message_id is None:
+            raise ValueError("'message_id' is required for edit")
+        return self
 
 
 # --- providers ----------------------------------------------------------------

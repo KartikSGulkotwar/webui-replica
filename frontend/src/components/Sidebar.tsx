@@ -1,14 +1,16 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useMatch, useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import {
   useConversations,
   useDeleteConversation,
-  useRenameConversation,
+  useUpdateConversation,
 } from '../hooks/useConversations'
+import { useDebounced } from '../hooks/useDebounced'
 import { groupByDate } from '../lib/dates'
+import type { Conversation } from '../types/api'
 import ConversationItem from './ConversationItem'
-import { MenuIcon, PlusIcon } from './icons'
+import { MenuIcon, PlusIcon, SearchIcon, XIcon } from './icons'
 import UserMenu from './UserMenu'
 
 interface Props {
@@ -21,13 +23,24 @@ interface Props {
 export default function Sidebar({ open, onClose, isMobile }: Props) {
   const activeId = useMatch('/c/:id')?.params.id
   const navigate = useNavigate()
-  const conversations = useConversations()
-  const rename = useRenameConversation()
+  const [search, setSearch] = useState('')
+  const query = useDebounced(search.trim(), 250)
+  const searching = query.length > 0
+  const conversations = useConversations({ q: query || undefined })
+  const update = useUpdateConversation()
   const remove = useDeleteConversation()
 
+  const list = conversations.data ?? []
+  const pinned = searching ? [] : list.filter((c) => c.pinned)
   const groups = useMemo(
-    () => groupByDate(conversations.data ?? [], (c) => c.updated_at),
-    [conversations.data],
+    () =>
+      searching
+        ? []
+        : groupByDate(
+            (conversations.data ?? []).filter((c) => !c.pinned),
+            (c) => c.updated_at,
+          ),
+    [conversations.data, searching],
   )
 
   const afterNavigate = () => {
@@ -39,7 +52,24 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
     if (id === activeId) navigate('/')
   }
 
-  const mutationError = rename.error ?? remove.error
+  const mutationError = update.error ?? remove.error
+
+  const item = (c: Conversation) => (
+    <li key={c.id}>
+      <ConversationItem
+        conversation={c}
+        active={c.id === activeId}
+        onNavigate={afterNavigate}
+        onRename={(title) => update.mutate({ id: c.id, patch: { title } })}
+        onTogglePin={() => update.mutate({ id: c.id, patch: { pinned: !c.pinned } })}
+        onArchive={() => {
+          update.mutate({ id: c.id, patch: { archived: true } })
+          if (c.id === activeId) navigate('/')
+        }}
+        onDelete={() => handleDelete(c.id)}
+      />
+    </li>
+  )
 
   return (
     <>
@@ -80,6 +110,28 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             <PlusIcon />
             New chat
           </Link>
+          <div className="relative mt-2">
+            <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Escape' && setSearch('')}
+              placeholder="Search chats"
+              aria-label="Search chats"
+              className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-7 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 [&::-webkit-search-cancel-button]:hidden"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                aria-label="Clear search"
+              >
+                <XIcon width={14} height={14} />
+              </button>
+            )}
+          </div>
         </div>
 
         <nav className="flex-1 overflow-y-auto px-2 pb-4">
@@ -103,25 +155,29 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
               </button>
             </div>
           )}
-          {conversations.isSuccess && conversations.data.length === 0 && (
-            <p className="px-2 pt-2 text-sm text-zinc-500">No conversations yet.</p>
+          {conversations.isSuccess && list.length === 0 && (
+            <p className="px-2 pt-2 text-sm text-zinc-500">
+              {searching ? `No chats match “${query}”.` : 'No conversations yet.'}
+            </p>
+          )}
+          {searching && list.length > 0 && (
+            <div className="mt-1">
+              <h2 className="px-2 pb-1 text-xs font-medium text-zinc-500">
+                {list.length} result{list.length === 1 ? '' : 's'}
+              </h2>
+              <ul className="space-y-0.5">{list.map(item)}</ul>
+            </div>
+          )}
+          {pinned.length > 0 && (
+            <div className="mt-1">
+              <h2 className="px-2 pb-1 text-xs font-medium text-zinc-500">Pinned</h2>
+              <ul className="space-y-0.5">{pinned.map(item)}</ul>
+            </div>
           )}
           {groups.map(({ group, items }) => (
             <div key={group} className="mt-3 first:mt-1">
               <h2 className="px-2 pb-1 text-xs font-medium text-zinc-500">{group}</h2>
-              <ul className="space-y-0.5">
-                {items.map((c) => (
-                  <li key={c.id}>
-                    <ConversationItem
-                      conversation={c}
-                      active={c.id === activeId}
-                      onNavigate={afterNavigate}
-                      onRename={(title) => rename.mutate({ id: c.id, title })}
-                      onDelete={() => handleDelete(c.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <ul className="space-y-0.5">{items.map(item)}</ul>
             </div>
           ))}
         </nav>

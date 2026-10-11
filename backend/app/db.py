@@ -20,7 +20,7 @@ def make_engine(database_url: str) -> Engine:
     return create_engine(database_url, pool_pre_ping=True)
 
 
-def run_migrations(database_url: str) -> None:
+def run_migrations(database_url: str, revision: str = "head") -> None:
     from alembic.config import Config
 
     from alembic import command
@@ -28,7 +28,7 @@ def run_migrations(database_url: str) -> None:
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "alembic"))
     cfg.set_main_option("sqlalchemy.url", database_url)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, revision)
 
 
 def get_session(request: Request) -> Iterator[Session]:

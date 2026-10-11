@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { errorMessage } from '../api/client'
+import { exportAllConversations } from '../api/conversations'
+import { downloadFile } from '../lib/exportChat'
 import PageHeader from '../components/PageHeader'
 import { useLogout, useMe, useUpdateMe } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -17,6 +19,26 @@ export default function AccountPage() {
   const [name, setName] = useState(me.data?.name ?? '')
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const exportAll = async () => {
+    setExporting(true)
+    setExportError(null)
+    try {
+      const all = await exportAllConversations()
+      const date = new Date().toISOString().slice(0, 10)
+      downloadFile(
+        `webui-replica-chats-${date}.json`,
+        JSON.stringify(all, null, 2),
+        'application/json',
+      )
+    } catch (err) {
+      setExportError(errorMessage(err))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const user = me.data
   if (!user) return null
@@ -151,6 +173,24 @@ export default function AccountPage() {
               </div>
             </form>
           )}
+
+          <div className={section}>
+            <h2 className="font-semibold">Your data</h2>
+            <p className="text-sm text-zinc-500">
+              Download every chat (including archived ones) as a JSON file.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={exportAll}
+                disabled={exporting}
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {exporting ? 'Preparing…' : 'Export all chats'}
+              </button>
+              {exportError && <span className="text-sm text-red-500">{exportError}</span>}
+            </div>
+          </div>
 
           <button
             type="button"
