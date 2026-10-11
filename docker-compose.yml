@@ -26,7 +26,17 @@ services:
       DATABASE_URL: postgresql+psycopg://webui:webui@postgres:5432/webui
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
-      PROVIDERS_READ_ONLY: ${PROVIDERS_READ_ONLY:-false}
+      # Accounts: first sign-up becomes admin unless ADMIN_EMAIL/ADMIN_PASSWORD are set.
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
+      DEFAULT_USER_ROLE: ${DEFAULT_USER_ROLE:-pending}
+      GUEST_ACCESS: ${GUEST_ACCESS:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       CHAT_RATE_LIMIT_PER_MINUTE: ${CHAT_RATE_LIMIT_PER_MINUTE:-20}
       # Browsers reach the backend through the frontend's nginx proxy.
       TRUSTED_PROXY_HOPS: 1

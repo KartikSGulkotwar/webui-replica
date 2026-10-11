@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link, NavLink, useMatch, useNavigate } from 'react-router-dom'
+import { Link, useMatch, useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import {
   useConversations,
@@ -8,7 +8,8 @@ import {
 } from '../hooks/useConversations'
 import { groupByDate } from '../lib/dates'
 import ConversationItem from './ConversationItem'
-import { MenuIcon, PlusIcon, SettingsIcon } from './icons'
+import { MenuIcon, PlusIcon } from './icons'
+import UserMenu from './UserMenu'
 
 interface Props {
   open: boolean
@@ -126,20 +127,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
         </nav>
 
         <div className="border-t border-zinc-200 p-2 dark:border-zinc-800">
-          <NavLink
-            to="/settings"
-            onClick={afterNavigate}
-            className={({ isActive }) =>
-              `flex items-center gap-2 rounded-lg px-3 py-2 text-sm ${
-                isActive
-                  ? 'bg-zinc-200 dark:bg-zinc-800'
-                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
-              }`
-            }
-          >
-            <SettingsIcon />
-            Settings
-          </NavLink>
+          <UserMenu onNavigate={afterNavigate} />
         </div>
 
         {mutationError && (

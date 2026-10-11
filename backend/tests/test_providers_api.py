@@ -6,6 +6,7 @@ from sqlmodel import SQLModel
 
 from app.main import create_app
 from app.models import Provider
+from tests.conftest import signup
 
 GROQ = "https://api.groq.test/openai/v1"
 
@@ -163,6 +164,7 @@ def test_key_without_encryption_key_is_rejected(settings) -> None:
     app = create_app(settings)
     SQLModel.metadata.create_all(app.state.engine)
     with TestClient(app) as client:
+        signup(client, "admin@example.com")
         resp = client.post(
             "/api/providers",
             json={"name": "G", "kind": "openai_compat", "base_url": GROQ, "api_key": "k"},
@@ -174,25 +176,16 @@ def test_key_without_encryption_key_is_rejected(settings) -> None:
             json={"name": "O", "kind": "ollama", "base_url": "http://localhost:11434"},
         )
         assert ok.status_code == 201
-        assert client.get("/api/config").json() == {
-            "providers_read_only": False,
-            "encryption_configured": False,
-            "in_docker": False,
-            "isolate_chats_by_browser": False,
-            "default_model": None,
-        }
+        assert client.get("/api/config").json()["encryption_configured"] is False
 
 
-def test_read_only_mode(settings, cipher) -> None:
-    settings.providers_read_only = True
-    app = create_app(settings)
-    SQLModel.metadata.create_all(app.state.engine)
-    with TestClient(app) as client:
-        assert client.get("/api/config").json()["providers_read_only"] is True
-        assert client.get("/api/providers").status_code == 200
-        body = {"name": "G", "kind": "ollama", "base_url": "http://x"}
-        assert client.post("/api/providers", json=body).status_code == 403
-        assert client.patch("/api/providers/x", json={"enabled": False}).status_code == 403
-        assert client.delete("/api/providers/x").status_code == 403
-        test = client.post("/api/providers/test", json={"kind": "ollama", "base_url": "http://x"})
-        assert test.status_code == 403
+def test_providers_are_admin_only(user_client, anon_client) -> None:
+    body = {"name": "G", "kind": "ollama", "base_url": "http://x"}
+    for c, expected in ((user_client, 403), (anon_client, 401)):
+        assert c.get("/api/providers").status_code == expected
+        assert c.post("/api/providers", json=body).status_code == expected
+        assert c.patch("/api/providers/x", json={"enabled": False}).status_code == expected
+        assert c.delete("/api/providers/x").status_code == expected
+        assert c.get("/api/providers/x/health").status_code == expected
+        test = c.post("/api/providers/test", json={"kind": "ollama", "base_url": "http://x"})
+        assert test.status_code == expected

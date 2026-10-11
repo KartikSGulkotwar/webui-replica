@@ -10,11 +10,10 @@ from app import __version__
 from app.config import Settings, get_settings
 from app.crypto import KeyCipher
 from app.db import BACKEND_DIR, make_engine, run_migrations
-from app.owner import OwnerCookieMiddleware
 from app.providers.registry import ProviderRegistry
 from app.ratelimit import RateLimiter
-from app.routers import chat, conversations, health, models, providers
-from app.seed import seed_providers
+from app.routers import admin, auth, chat, conversations, health, models, providers
+from app.seed import seed_admin, seed_providers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -26,6 +25,7 @@ async def lifespan(app: FastAPI):
         run_migrations(settings.database_url)
     with Session(app.state.engine) as session:
         seed_providers(session, settings, app.state.cipher)
+        seed_admin(session, settings)
 
     client = httpx.AsyncClient(follow_redirects=True)
     app.state.http = client
@@ -47,8 +47,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.chat_rate_limit_per_minute > 0
         else None
     )
+    app.state.auth_limiter = (
+        RateLimiter(app.state.engine, settings.auth_rate_limit_per_minute)
+        if settings.auth_rate_limit_per_minute > 0
+        else None
+    )
 
-    app.add_middleware(OwnerCookieMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -58,6 +62,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(auth.router)
+    app.include_router(admin.router)
     app.include_router(models.router)
     app.include_router(providers.router)
     app.include_router(conversations.router)

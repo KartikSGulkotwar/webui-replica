@@ -13,10 +13,31 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     # Run Alembic migrations on startup. Tests turn this off and create tables directly.
     auto_migrate: bool = True
-    # Public demos have no login, so lock provider management there.
-    providers_read_only: bool = False
-    # Public demos without login: each browser only sees its own conversations.
-    isolate_chats_by_browser: bool = False
+    # --- accounts -------------------------------------------------------------
+    # Signs session tokens. If empty, derived from ENCRYPTION_KEY; if that is also
+    # empty, a random per-process key is used (sessions end on restart).
+    secret_key: str = ""
+    session_days: int = 7
+    # Initial values; admins can change both at runtime in the admin panel.
+    enable_signup: bool = True
+    default_user_role: str = "pending"  # "pending" (admin approves) or "user"
+    # "Continue as guest" for public demos: a throwaway account per visitor.
+    guest_access: bool = False
+    # Create this admin on startup/deploy if it doesn't exist (so a public deploy
+    # isn't claimed by whoever signs up first).
+    admin_email: str = ""
+    admin_password: str = ""
+    admin_name: str = "Admin"
+    # Base URL for OAuth redirects, e.g. https://webui-replica.vercel.app.
+    # Empty: derived from the request (works behind Vercel and nginx).
+    public_url: str = ""
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Sign-up/login/guest attempts per minute per client IP.
+    auth_rate_limit_per_minute: int = 10
+
     # Model preselected for visitors who haven't picked one, e.g. "groq:openai/gpt-oss-120b".
     default_model: str = ""
     # Messages per minute per client IP on /api/chat/stream; 0 disables.

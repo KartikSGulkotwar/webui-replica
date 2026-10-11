@@ -9,14 +9,13 @@ import HealthBadge from './HealthBadge'
 
 interface Props {
   provider: Provider
-  readOnly: boolean
   onEdit: () => void
 }
 
 const smallButton =
   'rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'
 
-export default function ProviderCard({ provider, readOnly, onEdit }: Props) {
+export default function ProviderCard({ provider, onEdit }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const update = useUpdateProvider()
   const remove = useDeleteProvider()
@@ -75,7 +74,7 @@ export default function ProviderCard({ provider, readOnly, onEdit }: Props) {
         </div>
 
         <label
-          className={`relative inline-flex shrink-0 items-center ${readOnly ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+          className="relative inline-flex shrink-0 cursor-pointer items-center"
           title={provider.enabled ? 'Disable' : 'Enable'}
         >
           <input
@@ -83,7 +82,7 @@ export default function ProviderCard({ provider, readOnly, onEdit }: Props) {
             role="switch"
             className="peer sr-only"
             checked={provider.enabled}
-            disabled={readOnly || update.isPending}
+            disabled={update.isPending}
             onChange={(e) =>
               update.mutate({ id: provider.id, patch: { enabled: e.target.checked } })
             }
@@ -103,40 +102,32 @@ export default function ProviderCard({ provider, readOnly, onEdit }: Props) {
         >
           Test connection
         </button>
-        {!readOnly && (
-          <>
-            <button type="button" className={smallButton} onClick={onEdit}>
-              Edit
+        <button type="button" className={smallButton} onClick={onEdit}>
+          Edit
+        </button>
+        {confirmDelete ? (
+          <span className="flex items-center gap-2 text-xs">
+            <span className="text-red-600 dark:text-red-400">Delete {provider.name}?</span>
+            <button
+              type="button"
+              className="rounded-lg bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-500 disabled:opacity-50"
+              onClick={() => remove.mutate(provider.id)}
+              disabled={remove.isPending}
+            >
+              Delete
             </button>
-            {confirmDelete ? (
-              <span className="flex items-center gap-2 text-xs">
-                <span className="text-red-600 dark:text-red-400">Delete {provider.name}?</span>
-                <button
-                  type="button"
-                  className="rounded-lg bg-red-600 px-2.5 py-1 text-xs text-white hover:bg-red-500 disabled:opacity-50"
-                  onClick={() => remove.mutate(provider.id)}
-                  disabled={remove.isPending}
-                >
-                  Delete
-                </button>
-                <button
-                  type="button"
-                  className={smallButton}
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                className={`${smallButton} text-red-600 dark:text-red-400`}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete
-              </button>
-            )}
-          </>
+            <button type="button" className={smallButton} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={`${smallButton} text-red-600 dark:text-red-400`}
+            onClick={() => setConfirmDelete(true)}
+          >
+            Delete
+          </button>
         )}
       </div>
 

@@ -11,6 +11,7 @@ from app.db import make_engine
 from app.main import create_app
 from app.models import Provider, RateLimitBucket
 from app.ratelimit import RateLimiter, client_ip
+from tests.conftest import signup
 
 
 class FakeClock:
@@ -104,6 +105,7 @@ def test_chat_stream_is_rate_limited(settings) -> None:
     respx.post("http://o.test/api/chat").respond(content=reply)
 
     with TestClient(app) as client:
+        signup(client, "admin@example.com")
         with Session(app.state.engine) as session:
             session.add(Provider(id="o", name="O", kind="ollama", base_url="http://o.test"))
             session.commit()

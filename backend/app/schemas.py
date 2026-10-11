@@ -161,9 +161,69 @@ class ProviderTest(BaseModel):
 
 
 class AppConfig(BaseModel):
-    providers_read_only: bool
     encryption_configured: bool
     # Lets the UI suggest URLs that work from inside a container.
     in_docker: bool
-    isolate_chats_by_browser: bool
     default_model: str | None
+    # Sign-in page: no accounts yet means the next sign-up becomes the admin.
+    has_users: bool
+    signup_enabled: bool
+    guest_access: bool
+    oauth_providers: list[str]
+
+
+# --- accounts -----------------------------------------------------------------
+
+UserRole = Literal["admin", "user", "pending"]
+EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+
+
+class UserRead(BaseModel):
+    id: str
+    email: str | None
+    name: str
+    role: UserRole
+    is_guest: bool
+    has_password: bool
+    created_at: datetime
+    last_active_at: datetime
+
+
+class SignupRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    email: str = Field(max_length=320, pattern=EMAIL_PATTERN)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be blank")
+        return v
+
+    # "before" so pasted spaces are trimmed ahead of the format check.
+    @field_validator("email", mode="before")
+    @classmethod
+    def _email(cls, v: object) -> object:
+        return v.strip().lower() if isinstance(v, str) else v
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(max_length=320)
+    password: str = Field(max_length=128)
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+class AdminUserUpdate(BaseModel):
+    role: UserRole
+
+
+class AdminSettings(BaseModel):
+    enable_signup: bool
+    default_user_role: Literal["user", "pending"]

@@ -9,6 +9,8 @@ interface Props {
   isError: boolean
   selected: ModelInfo | null
   onSelect: (id: string) => void
+  /** Only admins can fix providers, so only they get links to the admin panel. */
+  isAdmin: boolean
 }
 
 function HealthDot({ ok }: { ok: boolean }) {
@@ -20,7 +22,14 @@ function HealthDot({ ok }: { ok: boolean }) {
   )
 }
 
-export default function ModelSelector({ data, isLoading, isError, selected, onSelect }: Props) {
+export default function ModelSelector({
+  data,
+  isLoading,
+  isError,
+  selected,
+  onSelect,
+  isAdmin,
+}: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const rootRef = useRef<HTMLDivElement>(null)
@@ -102,13 +111,17 @@ export default function ModelSelector({ data, isLoading, isError, selected, onSe
             {data && data.providers.length === 0 && (
               <p className="px-3 py-4 text-sm text-zinc-500">
                 No providers configured.{' '}
-                <Link
-                  to="/settings"
-                  className="text-indigo-500 hover:underline"
-                  onClick={() => setOpen(false)}
-                >
-                  Add one in Settings
-                </Link>
+                {isAdmin ? (
+                  <Link
+                    to="/admin/connections"
+                    className="text-indigo-500 hover:underline"
+                    onClick={() => setOpen(false)}
+                  >
+                    Add one in the admin panel
+                  </Link>
+                ) : (
+                  'Ask an admin to add one.'
+                )}
               </p>
             )}
             {groups.map(({ provider, models }) => (
@@ -119,10 +132,19 @@ export default function ModelSelector({ data, isLoading, isError, selected, onSe
                 </div>
                 {!provider.ok && (
                   <p className="px-3 pb-1 text-xs text-red-500" title={provider.error ?? undefined}>
-                    {provider.error ?? 'Unavailable'} ·{' '}
-                    <Link to="/settings" className="underline" onClick={() => setOpen(false)}>
-                      Settings
-                    </Link>
+                    {provider.error ?? 'Unavailable'}
+                    {isAdmin && (
+                      <>
+                        {' · '}
+                        <Link
+                          to="/admin/connections"
+                          className="underline"
+                          onClick={() => setOpen(false)}
+                        >
+                          Settings
+                        </Link>
+                      </>
+                    )}
                   </p>
                 )}
                 {provider.ok && models.length === 0 && (

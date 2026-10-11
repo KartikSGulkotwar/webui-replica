@@ -15,7 +15,9 @@ A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible A
 - **Conversation history.** Chats are saved and grouped by date, with auto-titles, inline rename, and delete.
 - **Provider settings in the browser.** Add, edit, enable/disable, and delete providers, and test a connection before saving. Presets cover common services.
 - **Encrypted API keys.** Keys are encrypted at rest and never sent back to the browser.
-- **Built for a public demo.** Includes a per-IP rate limit and a read-only provider mode.
+- **Accounts and roles.** Email/password sign-up (Argon2-hashed), optional "Sign in with GitHub/Google", and admin / user / pending roles. The first account becomes admin. Each user's chats are private.
+- **Admin panel.** Approve or remove users, change roles, turn sign-up on or off, and manage providers.
+- **Built for a public demo.** Includes an optional guest mode and per-IP rate limits on chat and sign-in.
 - **Polish.** Dark mode by default with a light toggle, works at phone widths, and handles empty, loading, and error states.
 
 | Settings | Mobile |
@@ -69,8 +71,8 @@ docker compose exec ollama ollama pull qwen2.5:0.5b   # a small model (~400 MB) 
 
 Open **http://localhost:3000**, then:
 
-- chat with the Ollama model straight away, and
-- add Groq, OpenAI, or another service under **Settings → Add provider**.
+- create your account (the first one becomes the admin and keeps any existing chats), then
+- add Groq, OpenAI, or another service under **Admin panel → Connections → Add provider**.
 
 If a port is taken, set `FRONTEND_PORT`, `BACKEND_PORT`, or `OLLAMA_PORT` in `.env`. Ollama installed directly on your machine is reachable from the backend container at `http://host.docker.internal:11434`.
 
@@ -106,8 +108,13 @@ Backend environment variables (see [`backend/.env.example`](backend/.env.example
 | `ENCRYPTION_KEY` | — | Fernet key for stored API keys. Required to save a provider with a key |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s), comma-separated |
 | `OLLAMA_BASE_URL`, `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` | — | Providers created on first start, only while the providers table is empty |
-| `PROVIDERS_READ_ONLY` | `false` | Blocks provider changes. Use on public deployments, since there is no login |
-| `ISOLATE_CHATS_BY_BROWSER` | `false` | Each browser sees only its own conversations, via an anonymous cookie. Use on public deployments |
+| `SECRET_KEY` | derived from `ENCRYPTION_KEY` | Signs session cookies |
+| `ENABLE_SIGNUP` | `true` | Initial value; admins can change it in the admin panel |
+| `DEFAULT_USER_ROLE` | `pending` | Role for new sign-ups: `pending` (admin approves) or `user`. Admins can change it |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | — | Creates this admin on startup/deploy, so a public site isn't claimed by whoever signs up first |
+| `GUEST_ACCESS` | `false` | Shows "Continue as guest" (a throwaway account per visitor) |
+| `GITHUB_CLIENT_ID`/`_SECRET`, `GOOGLE_CLIENT_ID`/`_SECRET`, `PUBLIC_URL` | — | Sign in with GitHub/Google. Register `<PUBLIC_URL>/api/auth/oauth/<provider>/callback` |
+| `AUTH_RATE_LIMIT_PER_MINUTE` | `10` | Sign-up/login/guest attempts per minute per IP |
 | `DEFAULT_MODEL` | — | Model new visitors start with, e.g. `groq:openai/gpt-oss-120b` |
 | `CHAT_RATE_LIMIT_PER_MINUTE` | `20` | Messages per minute per client IP. `0` disables the limit |
 | `TRUSTED_PROXY_HOPS` | `0` | Number of proxies whose `X-Forwarded-For` entries are trusted (1 behind nginx or Vercel) |
@@ -126,7 +133,9 @@ The Docker images also run on any container host (Render, Railway, Fly.io). Set 
 - **One normalized stream.** The browser only ever receives `data: {"delta": …}`, then `{"done": true, "usage": …}` or `{"error": …}`. The user's message is saved before the model is called. The reply is saved however the stream ends — when it finishes, when the provider fails, or when the user presses Stop — so partial answers survive a refresh.
 - **Encrypted keys.** API keys are encrypted with Fernet before they're stored. The API only reports `has_key`. If a stored key can't be decrypted, only that provider shows as broken; the rest keep working.
 - **Registry that follows the database.** Each request re-reads the enabled providers and rebuilds only the ones whose settings changed, so edits made in Settings apply immediately.
-- **A demo you can safely make public.** The app has no login, so `PROVIDERS_READ_ONLY` locks provider changes (and the connection-test endpoint, which could otherwise make the server call any URL). The rate limit counts hits in the database, so it holds across serverless instances. It uses only the `X-Forwarded-For` entries added by trusted proxies, so clients can't forge their IP to dodge the limit.
+- **Accounts without a session store.** A signed JWT in an HttpOnly, SameSite=Lax cookie identifies the user, so any serverless instance can verify it without shared memory. The token carries a per-user `session_version`: changing a password bumps it and signs out every other device. Roles are read from the database on each request, so approving, demoting, or deleting a user takes effect immediately. Login uses the same error and timing for unknown emails as for wrong passwords, so it doesn't reveal which accounts exist.
+- **Admin-only provider settings.** Provider URLs and keys, and the connection-test endpoint (which makes the server call a URL), are restricted to admins. Other users only see the model list.
+- **A demo you can safely make public.** The admin account is created from env vars at deploy time, so a stranger can't claim the site by signing up first. The rate limits count hits in the database, so they hold across serverless instances, and use only the `X-Forwarded-For` entries added by trusted proxies, so clients can't forge their IP to dodge them.
 - **Vercel instead of a separate backend host.** Vercel runs FastAPI with streaming and lifespan support, and serves the built frontend from its CDN on the same domain. That avoids CORS and the 30–60 s cold start of a sleeping free container. Migrations and seeding run once per deploy instead of on every cold start.
 
 ## Project structure

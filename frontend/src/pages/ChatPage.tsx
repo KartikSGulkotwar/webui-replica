@@ -7,6 +7,7 @@ import MessageBubble from '../components/MessageBubble'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatStream } from '../hooks/useChatStream'
+import { useMe } from '../hooks/useAuth'
 import { useConversation } from '../hooks/useConversation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
@@ -19,6 +20,7 @@ export default function ChatPage() {
   const modelsQuery = useModels()
   const models = modelsQuery.data?.models
   const config = useAppConfig()
+  const me = useMe()
   const { selected, select } = useSelectedModel(models, config.data?.default_model)
   const conversation = useConversation(id)
   const { pending, send, stop, isStreaming } = useChatStream(id)
@@ -69,6 +71,7 @@ export default function ChatPage() {
           isError={modelsQuery.isError}
           selected={selected}
           onSelect={select}
+          isAdmin={me.data?.role === 'admin'}
         />
         <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500">
           {conversation.data?.title}

@@ -60,8 +60,10 @@ Keep it somewhere safe. If it changes, stored API keys can no longer be decrypte
    | `OPENAI_COMPAT_BASE_URL` | `https://api.groq.com/openai/v1` |
    | `OPENAI_COMPAT_API_KEY` | Groq key from step 2 |
    | `OLLAMA_BASE_URL` | `http://localhost:11434` (shows Ollama as a configured but offline provider, which is honest for a cloud demo) |
-   | `PROVIDERS_READ_ONLY` | `true` |
-   | `ISOLATE_CHATS_BY_BROWSER` | `true` (visitors can't see each other's chats) |
+   | `ADMIN_EMAIL` | your email: the admin account, created during the build |
+   | `ADMIN_PASSWORD` | a strong password for it (change it later under **Account**) |
+   | `GUEST_ACCESS` | `true` (visitors can try it without signing up) |
+   | `DEFAULT_USER_ROLE` | `user` (people who sign up can chat right away) |
    | `DEFAULT_MODEL` | `groq:openai/gpt-oss-120b` (model new visitors start with) |
    | `AUTO_MIGRATE` | `false` |
    | `TRUSTED_PROXY_HOPS` | `1` |
@@ -82,7 +84,8 @@ Open `https://<your-project>.vercel.app` and confirm:
       with a red one.
 - [ ] A reply streams in word by word, and **Stop** works.
 - [ ] Refreshing keeps the conversation; rename and delete work.
-- [ ] **Settings** shows the read-only notice and no edit buttons.
+- [ ] You can sign in with `ADMIN_EMAIL`, and **Admin panel** lists users and providers.
+- [ ] **Continue as guest** works in a private window, and that guest can't see your chats.
 - [ ] It works on your phone.
 
 If the build fails, open the deployment's **Build Logs**. Common causes:
@@ -94,31 +97,16 @@ If the build fails, open the deployment's **Build Logs**. Common causes:
 | `ENCRYPTION_KEY is not set` | Add `ENCRYPTION_KEY`, then redeploy |
 | Connection or SSL errors | Use Neon's **pooled** connection string including `?sslmode=require` |
 
-## Changing providers later
+## Managing the demo
 
-The demo's Settings page is read-only on purpose: there's no login, so anyone could
-otherwise edit providers. To change the Groq key or add a provider, run the backend
-locally against the Neon database with editing allowed:
+Sign in with `ADMIN_EMAIL` and open **Admin panel** (bottom-left menu):
 
-```bash
-cd backend
-DATABASE_URL='<neon url>' ENCRYPTION_KEY='<same key>' PROVIDERS_READ_ONLY=false \
-  .venv/bin/uvicorn app.main:app --port 8000
-# in another terminal: cd frontend && npm run dev → http://localhost:5173/settings
-```
+- **Connections:** change the Groq key or add providers. Changes apply immediately.
+- **Users:** see who signed up, change roles, or remove accounts (their chats go too).
+- **General:** turn sign-up off, or make new accounts wait for your approval.
 
-If you keep the demo's values in the root `.env` as `VERCEL_DATABASE_URL` and
-`VERCEL_ENCRYPTION_KEY` (Vercel can't display sensitive values again), this does
-the same without copying them by hand:
-
-```bash
-cd backend
-DATABASE_URL="$(grep '^VERCEL_DATABASE_URL=' ../.env | cut -d= -f2-)" \
-ENCRYPTION_KEY="$(grep '^VERCEL_ENCRYPTION_KEY=' ../.env | cut -d= -f2-)" \
-PROVIDERS_READ_ONLY=false .venv/bin/uvicorn app.main:app --port 8000
-```
-
-Changes take effect on the live site immediately.
+Only admins can see provider settings or call the connection-test endpoint, so
+visitors can't read your keys or make the server fetch arbitrary URLs.
 
 ## Limits to know about
 

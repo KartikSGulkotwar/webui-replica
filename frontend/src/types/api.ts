@@ -95,9 +95,30 @@ export interface ProviderHealth {
 }
 
 export interface AppConfig {
-  providers_read_only: boolean
   encryption_configured: boolean
   in_docker: boolean
-  isolate_chats_by_browser: boolean
   default_model: string | null
+  /** False until the first account exists; that sign-up becomes the admin. */
+  has_users: boolean
+  signup_enabled: boolean
+  guest_access: boolean
+  oauth_providers: string[]
+}
+
+export type UserRole = 'admin' | 'user' | 'pending'
+
+export interface User {
+  id: string
+  email: string | null
+  name: string
+  role: UserRole
+  is_guest: boolean
+  has_password: boolean
+  created_at: string
+  last_active_at: string
+}
+
+export interface AdminSettings {
+  enable_signup: boolean
+  default_user_role: 'user' | 'pending'
 }

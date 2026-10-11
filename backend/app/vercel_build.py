@@ -1,6 +1,6 @@
 """Build step for Vercel (run from backend/ via [tool.vercel.scripts] build).
 
-1. Applies database migrations and seeds providers, so cold starts don't race
+1. Applies database migrations and seeds providers and the admin account, so cold starts don't race
    to do it (set AUTO_MIGRATE=false in the Vercel project).
 2. Builds the React frontend and copies it to backend/static, which the app
    serves with app.frontend() and Vercel promotes to its CDN.
@@ -17,7 +17,7 @@ from sqlmodel import Session
 from app.config import get_settings
 from app.crypto import KeyCipher
 from app.db import BACKEND_DIR, make_engine, run_migrations
-from app.seed import seed_providers
+from app.seed import seed_admin, seed_providers
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 STATIC_DIR = BACKEND_DIR / "static"
@@ -34,6 +34,8 @@ def migrate_and_seed() -> None:
     engine = make_engine(settings.database_url)
     with Session(engine) as session:
         seeded = seed_providers(session, settings, KeyCipher(settings.encryption_key))
+        if seed_admin(session, settings):
+            log.info("Created admin account %s", settings.admin_email)
     engine.dispose()
     log.info("Seeded providers: %s", ", ".join(seeded) or "none (table not empty)")
 

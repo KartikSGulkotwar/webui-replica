@@ -2,7 +2,7 @@ import pytest
 from sqlmodel import select
 
 from app.crypto import EncryptionError, KeyCipher
-from app.models import Provider
+from app.models import Provider, User
 from app.seed import guess_provider_name, seed_providers
 
 
@@ -52,3 +52,33 @@ def test_seed_with_key_but_no_encryption_key_fails(session, settings) -> None:
 
 def test_seed_nothing_configured(session, settings, cipher) -> None:
     assert seed_providers(session, settings, cipher) == []
+
+
+def test_seed_admin_creates_admin_once(session, settings) -> None:
+    from app.security import verify_password
+    from app.seed import seed_admin
+
+    settings.admin_email = "Owner@Example.com"
+    settings.admin_password = "a-strong-password"
+    assert seed_admin(session, settings) is True
+    assert seed_admin(session, settings) is False  # already exists
+    owner = session.exec(select(User).where(User.email == "owner@example.com")).one()
+    assert owner.role == "admin" and verify_password(owner.password_hash, "a-strong-password")
+
+
+def test_seed_admin_promotes_existing_account(session, settings) -> None:
+    from app.seed import seed_admin
+
+    session.add(User(email="owner@example.com", name="O", role="pending"))
+    session.commit()
+    settings.admin_email = "owner@example.com"
+    settings.admin_password = "ignored-for-existing"
+    assert seed_admin(session, settings) is False
+    assert session.exec(select(User)).one().role == "admin"
+
+
+def test_seed_admin_needs_email_and_password(session, settings) -> None:
+    from app.seed import seed_admin
+
+    settings.admin_email = "owner@example.com"
+    assert seed_admin(session, settings) is False

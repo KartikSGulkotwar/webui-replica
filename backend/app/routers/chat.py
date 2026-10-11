@@ -8,9 +8,9 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Engine
 from sqlmodel import Session
 
+from app.auth import ActiveUserDep
 from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
-from app.owner import OwnerDep
 from app.providers.base import BaseProvider, ProviderError, split_model_id
 from app.providers.registry import RegistryDep
 from app.ratelimit import limit_chat
@@ -112,7 +112,7 @@ async def chat_stream(
     request: Request,
     session: SessionDep,
     registry: RegistryDep,
-    owner: OwnerDep,
+    user: ActiveUserDep,
 ) -> StreamingResponse:
     # Validate everything we can before streaming so failures are plain HTTP errors.
     try:
@@ -120,7 +120,7 @@ async def chat_stream(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    conversation = get_conversation_or_404(session, body.conversation_id, owner)
+    conversation = get_conversation_or_404(session, body.conversation_id, user)
 
     await run_in_threadpool(registry.sync, session)
     try:

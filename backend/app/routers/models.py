@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter
 from fastapi.concurrency import run_in_threadpool
 
+from app.auth import ActiveUserDep
 from app.db import SessionDep
 from app.providers.base import ProviderError
 from app.providers.registry import RegistryDep, RegistryEntry
@@ -21,7 +22,9 @@ async def _fetch(entry: RegistryEntry) -> list[ModelInfo]:
 
 
 @router.get("/models", response_model=ModelsResponse)
-async def list_models(session: SessionDep, registry: RegistryDep) -> ModelsResponse:
+async def list_models(
+    session: SessionDep, registry: RegistryDep, user: ActiveUserDep
+) -> ModelsResponse:
     await run_in_threadpool(registry.sync, session)
     entries = registry.entries()
     # One slow or broken provider must not hide the others' models.

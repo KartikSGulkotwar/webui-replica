@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import Session, col, select
 
+from app.auth import get_admin_user
 from app.crypto import EncryptionError, KeyCipher
 from app.db import SessionDep
 from app.models import Provider, utcnow
@@ -18,7 +19,10 @@ from app.schemas import (
 )
 from app.seed import slugify
 
-router = APIRouter(prefix="/api/providers", tags=["providers"])
+# Provider settings (URLs, keys) are for admins only.
+router = APIRouter(
+    prefix="/api/providers", tags=["providers"], dependencies=[Depends(get_admin_user)]
+)
 
 
 def get_cipher(request: Request) -> KeyCipher:
@@ -31,16 +35,6 @@ def get_http(request: Request) -> httpx.AsyncClient:
 
 CipherDep = Annotated[KeyCipher, Depends(get_cipher)]
 HttpDep = Annotated[httpx.AsyncClient, Depends(get_http)]
-
-
-def require_writable(request: Request) -> None:
-    if request.app.state.settings.providers_read_only:
-        raise HTTPException(
-            status_code=403, detail="Provider settings are read-only on this deployment"
-        )
-
-
-Writable = Depends(require_writable)
 
 
 def to_read(row: Provider) -> ProviderRead:
@@ -88,7 +82,6 @@ def list_providers(session: SessionDep) -> list[ProviderRead]:
     "",
     response_model=ProviderRead,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Writable],
 )
 def create_provider(body: ProviderCreate, session: SessionDep, cipher: CipherDep) -> ProviderRead:
     key = (body.api_key or "").strip()
@@ -106,7 +99,7 @@ def create_provider(body: ProviderCreate, session: SessionDep, cipher: CipherDep
     return to_read(row)
 
 
-@router.patch("/{provider_id}", response_model=ProviderRead, dependencies=[Writable])
+@router.patch("/{provider_id}", response_model=ProviderRead)
 def update_provider(
     provider_id: str, body: ProviderUpdate, session: SessionDep, cipher: CipherDep
 ) -> ProviderRead:
@@ -130,7 +123,7 @@ def update_provider(
     return to_read(row)
 
 
-@router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Writable])
+@router.delete("/{provider_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_provider(provider_id: str, session: SessionDep) -> Response:
     session.delete(get_or_404(session, provider_id))
     session.commit()
@@ -150,11 +143,11 @@ async def provider_health(
     return await provider.health()
 
 
-@router.post("/test", response_model=ProviderHealth, dependencies=[Writable])
+@router.post("/test", response_model=ProviderHealth)
 async def test_connection(
     body: ProviderTest, session: SessionDep, cipher: CipherDep, http: HttpDep
 ) -> ProviderHealth:
-    """Test unsaved form values. Writable-only: it makes the server call any URL."""
+    """Test unsaved form values (admins only: it makes the server call any URL)."""
     api_key = body.api_key.strip() if body.api_key else None
     if api_key is None and body.provider_id:
         row = get_or_404(session, body.provider_id)

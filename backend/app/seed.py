@@ -7,7 +7,8 @@ from sqlmodel import Session, select
 
 from app.config import Settings
 from app.crypto import KeyCipher
-from app.models import Provider
+from app.models import Provider, User
+from app.security import hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -68,3 +69,37 @@ def seed_providers(session: Session, settings: Settings, cipher: KeyCipher) -> l
     if rows:
         logger.info("Seeded providers: %s", ", ".join(r.id for r in rows))
     return [r.id for r in rows]
+
+
+def seed_admin(session: Session, settings: Settings) -> bool:
+    """Create ADMIN_EMAIL as an admin if it doesn't exist yet. Returns True if created.
+
+    An existing account with that email is promoted to admin but keeps its password.
+    """
+    email = settings.admin_email.strip().lower()
+    if not email or not settings.admin_password:
+        return False
+    user = session.exec(select(User).where(User.email == email)).first()
+    if user is not None:
+        if user.role != "admin":
+            user.role = "admin"
+            session.add(user)
+            session.commit()
+        return False
+    from app.routers.auth import create_user  # avoid an import cycle
+
+    try:
+        create_user(
+            session,
+            User(
+                email=email,
+                name=settings.admin_name or "Admin",
+                password_hash=hash_password(settings.admin_password),
+                role="admin",
+            ),
+        )
+    except Exception:  # another instance created it at the same moment
+        session.rollback()
+        return False
+    logger.info("Created admin account %s", email)
+    return True

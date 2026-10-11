@@ -35,7 +35,7 @@ class Conversation(SQLModel, table=True):
 
     id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
     title: str = Field(default=DEFAULT_TITLE, max_length=200)
-    # Anonymous browser ID (see app/owner.py); later, the user ID once accounts exist.
+    # ID of the user who owns the conversation.
     owner_id: str | None = Field(default=None, max_length=64, index=True)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow, index=True)
@@ -70,3 +70,45 @@ class RateLimitBucket(SQLModel, table=True):
     key: str = Field(primary_key=True, max_length=100)
     window_start: int = Field(primary_key=True)  # epoch seconds
     count: int = Field(default=0)
+
+
+ROLES = ("admin", "user", "pending")
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    # Lower-cased. None for guest accounts.
+    email: str | None = Field(default=None, max_length=320, unique=True)
+    name: str = Field(max_length=100)
+    # None for accounts that only sign in with GitHub/Google, and for guests.
+    password_hash: str | None = Field(default=None, max_length=255)
+    role: str = Field(default="pending", max_length=20)
+    is_guest: bool = Field(default=False)
+    # Part of every session token; bumping it signs the user out everywhere.
+    session_version: int = Field(default=0)
+    created_at: datetime = Field(default_factory=utcnow)
+    last_active_at: datetime = Field(default_factory=utcnow)
+
+
+class OAuthAccount(SQLModel, table=True):
+    __tablename__ = "oauth_accounts"
+
+    provider: str = Field(primary_key=True, max_length=20)  # "github" | "google"
+    subject: str = Field(primary_key=True, max_length=255)  # the provider's user ID
+    user_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AppSetting(SQLModel, table=True):
+    """Settings admins change at runtime (JSON values), overriding env defaults."""
+
+    __tablename__ = "app_settings"
+
+    key: str = Field(primary_key=True, max_length=100)
+    value: str = Field(sa_column=Column(Text, nullable=False))
