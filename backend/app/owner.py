@@ -56,7 +56,12 @@ class OwnerCookieMiddleware:
             return
 
         owner_id = _cookie_value(scope)
-        is_new = owner_id is None
+        # Issue the cookie only on requests that create or change something. A
+        # page load fires several reads at once; if each handed out a new ID, the
+        # browser would keep whichever arrived last and could switch IDs after
+        # the first conversation was created, orphaning it. Reads without a
+        # cookie just get a throwaway ID, which owns nothing.
+        is_new = owner_id is None and scope["method"] not in ("GET", "HEAD", "OPTIONS")
         if owner_id is None:
             owner_id = secrets.token_urlsafe(24)
         scope.setdefault("state", {})["owner_id"] = owner_id

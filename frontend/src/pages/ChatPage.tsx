@@ -64,7 +64,8 @@ export default function ChatPage() {
         )}
         <ModelSelector
           data={modelsQuery.data}
-          isLoading={modelsQuery.isLoading}
+          // Wait for the config too, so the default model shows without a flicker.
+          isLoading={modelsQuery.isLoading || config.isLoading}
           isError={modelsQuery.isError}
           selected={selected}
           onSelect={select}

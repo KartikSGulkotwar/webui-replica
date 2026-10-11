@@ -21,25 +21,40 @@ def isolated_app(settings):
     return app
 
 
-def test_first_response_sets_anonymous_cookie(client) -> None:
-    resp = client.get("/api/health")
+def test_cookie_issued_on_first_write_not_on_reads(client) -> None:
+    # Reads (a page load fires several at once) never issue an ID, so parallel
+    # responses can't race to overwrite each other's cookie.
+    assert "set-cookie" not in client.get("/api/health").headers
+    assert "set-cookie" not in client.get("/api/conversations").headers
+
+    resp = client.post("/api/conversations", json={})
     cookie = resp.headers["set-cookie"]
     assert cookie.startswith(f"{COOKIE}=")
     assert "HttpOnly" in cookie and "SameSite=Lax" in cookie and "Max-Age=" in cookie
     assert "Secure" not in cookie  # plain http test server
     # Sent back automatically afterwards, so no new cookie is issued.
-    assert "set-cookie" not in client.get("/api/health").headers
+    assert "set-cookie" not in client.post("/api/conversations", json={}).headers
 
 
 def test_cookie_is_secure_behind_https_proxy(client) -> None:
-    resp = client.get("/api/health", headers={"X-Forwarded-Proto": "https"})
+    resp = client.post("/api/conversations", json={}, headers={"X-Forwarded-Proto": "https"})
     assert "Secure" in resp.headers["set-cookie"]
 
 
 def test_invalid_cookie_is_replaced(client) -> None:
     client.cookies.set(COOKIE, "bad value!")
-    resp = client.get("/api/health")
+    resp = client.post("/api/conversations", json={})
     assert resp.headers["set-cookie"].startswith(f"{COOKIE}=")
+
+
+def test_parallel_first_reads_do_not_change_the_owner(isolated_app) -> None:
+    with TestClient(isolated_app) as client:
+        for path in ("/api/models", "/api/config", "/api/conversations"):
+            client.get(path)
+        conv = client.post("/api/conversations", json={}).json()["id"]
+        for path in ("/api/models", "/api/config", "/api/conversations"):
+            client.get(path)
+        assert [c["id"] for c in client.get("/api/conversations").json()] == [conv]
 
 
 def test_conversation_records_owner(client, session) -> None:
