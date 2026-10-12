@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = ""
     openai_compat_base_url: str = ""
     openai_compat_api_key: str = ""
+    anthropic_api_key: str = ""
 
     @field_validator("database_url")
     @classmethod

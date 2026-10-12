@@ -38,6 +38,7 @@ def settings() -> Settings:
         ollama_base_url="",
         openai_compat_base_url="",
         openai_compat_api_key="",
+        anthropic_api_key="",
     )
 
 

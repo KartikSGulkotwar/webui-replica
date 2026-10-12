@@ -11,7 +11,7 @@ from sqlmodel import Session
 from app.auth import ActiveUserDep
 from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
-from app.providers.base import BaseProvider, ProviderError, split_model_id
+from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
 from app.providers.registry import RegistryDep
 from app.ratelimit import limit_chat
 from app.routers.conversations import get_conversation_or_404, list_messages
@@ -70,10 +70,14 @@ async def stream_and_persist(
 
     The reply is saved however the stream ends: on completion, on a provider
     error, or when the client disconnects (Stop button), so partial answers
-    survive a refresh. Nothing is saved if no text was produced.
+    survive a refresh. Nothing is saved if no text was produced, or if the
+    model declined (a refusal's partial text is discarded).
     """
     parts: list[str] = []
     saved = False
+
+    # Changes if a different model answered (server-side refusal fallback).
+    answered_by = model_id
 
     def save() -> int | None:
         nonlocal saved
@@ -81,7 +85,7 @@ async def stream_and_persist(
         content = "".join(parts)
         if not content:
             return None
-        return save_assistant_message(engine, conversation_id, model_id, content)
+        return save_assistant_message(engine, conversation_id, answered_by, content)
 
     try:
         async for chunk in provider.stream_chat(model, history, params):
@@ -89,9 +93,20 @@ async def stream_and_persist(
                 parts.append(chunk.delta)
                 yield sse({"delta": chunk.delta})
             if chunk.done:
+                if chunk.served_by:
+                    answered_by = f"{provider.id}:{chunk.served_by}"
                 message_id = await run_in_threadpool(save)
-                yield sse({"done": True, "usage": chunk.usage, "message_id": message_id})
+                done: dict = {"done": True, "usage": chunk.usage, "message_id": message_id}
+                if chunk.served_by:
+                    done["model_id"] = answered_by
+                yield sse(done)
                 return
+    except RefusalError as exc:
+        # A declined reply isn't an answer: drop the partial text and tell the
+        # browser to discard what it already showed.
+        parts.clear()
+        await run_in_threadpool(save)
+        yield sse({"error": str(exc), "discard": True})
     except ProviderError as exc:
         await run_in_threadpool(save)
         yield sse({"error": str(exc)})

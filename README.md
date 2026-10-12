@@ -1,6 +1,6 @@
 # WebUI Replica
 
-A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible API** (Groq, OpenRouter, OpenAI, Together, LM Studio, vLLM) from one interface. Replies stream in as they're written, and you can switch providers in the middle of a conversation.
+A self-hosted AI chat app that talks to **Ollama**, **Anthropic's Claude** (native API), and **any OpenAI-compatible API** (Groq, OpenRouter, OpenAI, Together, LM Studio, vLLM) from one interface. Replies stream in as they're written, and you can switch providers in the middle of a conversation.
 
 **Live demo: [webui-replica.vercel.app](https://webui-replica.vercel.app)** · runs on Groq's free tier, so Ollama shows as configured but offline (it needs a machine you control). For the full experience, run it locally with `docker compose up`.
 
@@ -8,7 +8,7 @@ A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible A
 
 ## Features
 
-- **Two provider types, one model menu.** Models from every enabled provider are grouped by provider, each with a live health dot.
+- **Three provider types, one model menu.** Models from every enabled provider are grouped by provider, each with a live health dot.
 - **Switch models mid-conversation.** The next message goes to the newly selected model with the full history, and each reply is labelled with the model and provider that wrote it.
 - **Streaming with Stop.** Tokens appear as they're generated. Stopping keeps the partial answer.
 - **Markdown, code, and math.** GitHub-flavoured Markdown, syntax highlighting with a copy button, and LaTeX formulas (KaTeX loads only for messages that contain math).
@@ -19,6 +19,7 @@ A self-hosted AI chat app that talks to **Ollama** and **any OpenAI-compatible A
 - **Conversation history.** Chats are saved and grouped by date, with auto-titles, inline rename, and delete.
 - **Provider settings in the browser.** Add, edit, enable/disable, and delete providers, and test a connection before saving. Presets cover common services.
 - **Encrypted API keys.** Keys are encrypted at rest and never sent back to the browser.
+- **Native Claude support.** Uses the official Anthropic SDK, so the system prompt, per-model output limits, and prompt caching work as Claude intends. If a model declines a request, server-side fallback can answer with another Claude model, and the reply is labelled with the model that actually answered.
 - **Accounts and roles.** Email/password sign-up (Argon2-hashed), optional "Sign in with GitHub/Google", and admin / user / pending roles. The first account becomes admin. Each user's chats are private.
 - **Admin panel.** Approve or remove users, change roles, turn sign-up on or off, and manage providers.
 - **Built for a public demo.** Includes an optional guest mode and per-IP rate limits on chat and sign-in.
@@ -45,7 +46,9 @@ flowchart LR
     DB[("Postgres / SQLite<br/>conversations · messages<br/>providers (encrypted keys)")]
     UI -- "REST + SSE (/api)" --> R
     R --> DB
+    REG --> AN["AnthropicProvider<br/>official SDK"]
     OL --> O["Ollama"]
+    AN --> C["Anthropic API (Claude)"]
     OA --> G["Groq · OpenRouter · OpenAI<br/>LM Studio · vLLM · …"]
 ```
 
@@ -111,7 +114,7 @@ Backend environment variables (see [`backend/.env.example`](backend/.env.example
 | `DATABASE_URL` | `sqlite:///./webui.db` | SQLite or Postgres. `postgres://` URLs from hosts like Neon work as-is |
 | `ENCRYPTION_KEY` | — | Fernet key for stored API keys. Required to save a provider with a key |
 | `FRONTEND_ORIGIN` | `http://localhost:5173` | Allowed CORS origin(s), comma-separated |
-| `OLLAMA_BASE_URL`, `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` | — | Providers created on first start, only while the providers table is empty |
+| `OLLAMA_BASE_URL`, `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY`, `ANTHROPIC_API_KEY` | — | Providers created on first start, only while the providers table is empty |
 | `SECRET_KEY` | derived from `ENCRYPTION_KEY` | Signs session cookies |
 | `ENABLE_SIGNUP` | `true` | Initial value; admins can change it in the admin panel |
 | `DEFAULT_USER_ROLE` | `pending` | Role for new sign-ups: `pending` (admin approves) or `user`. Admins can change it |
@@ -132,11 +135,12 @@ The Docker images also run on any container host (Render, Railway, Fly.io). Set 
 
 ## Design decisions
 
-- **Provider abstraction.** Ollama and OpenAI-compatible APIs implement the same small interface: `list_models`, `stream_chat`, and `health`. Each provider turns its wire format (Ollama's NDJSON, OpenAI's SSE with a `[DONE]` terminator) into the same text deltas plus one final chunk with token usage. Supporting another kind of API means adding one class.
+- **Provider abstraction.** Ollama, OpenAI-compatible APIs, and Anthropic implement the same small interface: `list_models`, `stream_chat`, and `health`. Each provider turns its wire format (Ollama's NDJSON, OpenAI's SSE with a `[DONE]` terminator, Anthropic's typed stream events via the official SDK) into the same text deltas plus one final chunk with token usage. Supporting another kind of API means adding one class.
 - **Namespaced model IDs.** The frontend sees models as `provider_id:model`, so two providers can offer a model with the same name. The ID is split on the *first* colon because Ollama tags contain colons: `ollama:llama3.2:1b` → provider `ollama`, model `llama3.2:1b`.
 - **One normalized stream.** The browser only ever receives `data: {"delta": …}`, then `{"done": true, "usage": …}` or `{"error": …}`. The user's message is saved before the model is called. The reply is saved however the stream ends — when it finishes, when the provider fails, or when the user presses Stop — so partial answers survive a refresh.
 - **Encrypted keys.** API keys are encrypted with Fernet before they're stored. The API only reports `has_key`. If a stored key can't be decrypted, only that provider shows as broken; the rest keep working.
 - **Registry that follows the database.** Each request re-reads the enabled providers and rebuilds only the ones whose settings changed, so edits made in Settings apply immediately.
+- **Refusals are not answers.** When Claude declines, the partial text is discarded rather than saved, and the user sees why. On Anthropic's API the newest models opt into server-side fallback (`fallbacks: "default"`), so most declines are answered by another Claude model on the same stream.
 - **Accounts without a session store.** A signed JWT in an HttpOnly, SameSite=Lax cookie identifies the user, so any serverless instance can verify it without shared memory. The token carries a per-user `session_version`: changing a password bumps it and signs out every other device. Roles are read from the database on each request, so approving, demoting, or deleting a user takes effect immediately. Login uses the same error and timing for unknown emails as for wrong passwords, so it doesn't reveal which accounts exist.
 - **Admin-only provider settings.** Provider URLs and keys, and the connection-test endpoint (which makes the server call a URL), are restricted to admins. Other users only see the model list.
 - **A demo you can safely make public.** The admin account is created from env vars at deploy time, so a stranger can't claim the site by signing up first. The rate limits count hits in the database, so they hold across serverless instances, and use only the `X-Forwarded-For` entries added by trusted proxies, so clients can't forge their IP to dodge them.

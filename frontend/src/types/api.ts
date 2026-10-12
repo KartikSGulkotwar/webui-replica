@@ -3,7 +3,7 @@ export interface HealthResponse {
   version: string
 }
 
-export type ProviderKind = 'ollama' | 'openai_compat'
+export type ProviderKind = 'ollama' | 'openai_compat' | 'anthropic'
 
 export interface ModelInfo {
   /** Namespaced: "{provider_id}:{name}" */
@@ -87,8 +87,10 @@ export interface Usage {
 
 export type StreamEvent =
   | { delta: string }
-  | { done: true; usage: Usage | null; message_id: number | null }
-  | { error: string }
+  /** model_id is set when a different model answered (refusal fallback). */
+  | { done: true; usage: Usage | null; message_id: number | null; model_id?: string }
+  /** discard: the model declined; throw away the partial text already shown. */
+  | { error: string; discard?: boolean }
 
 export interface ChatStreamRequest {
   conversation_id: string

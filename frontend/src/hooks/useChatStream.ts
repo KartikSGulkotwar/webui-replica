@@ -148,8 +148,12 @@ export function useChatStream(conversationId: string | undefined) {
               )
             } else if ('error' in event) {
               final = { status: 'error', error: event.error }
+              // A declined reply isn't an answer: hide what was already shown.
+              if (event.discard) update({ text: '' })
             } else if ('done' in event) {
               final = { status: 'done' }
+              // A fallback model answered: label the reply with it.
+              if (event.model_id) update({ modelId: event.model_id })
             }
           },
         })

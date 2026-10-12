@@ -24,6 +24,10 @@ class ProviderError(Exception):
     """A provider call failed. The message is safe to show to users."""
 
 
+class RefusalError(ProviderError):
+    """The model declined. Any partial reply should be discarded, not saved."""
+
+
 def split_model_id(model_id: str) -> tuple[str, str]:
     """Split "provider:model" on the first colon. Model names may contain colons
     (Ollama tags like "llama3.2:1b"); provider IDs never do."""

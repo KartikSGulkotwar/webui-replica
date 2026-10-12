@@ -51,7 +51,7 @@ export default function ProviderCard({ provider, onEdit }: Props) {
           <p className="mt-1 truncate font-mono text-xs text-zinc-500" title={provider.base_url}>
             {provider.base_url}
           </p>
-          {provider.kind === 'openai_compat' && (
+          {provider.kind !== 'ollama' && (
             <p className="mt-1 text-xs text-zinc-500">
               {provider.has_key ? 'API key saved (encrypted)' : 'No API key'}
             </p>

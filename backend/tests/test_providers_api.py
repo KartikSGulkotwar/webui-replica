@@ -47,7 +47,7 @@ def test_create_generates_unique_ids(client) -> None:
         ({"base_url": "ftp://x"}, "http:// or https://"),
         ({"base_url": "api.groq.com"}, "http:// or https://"),
         ({"name": "   "}, "blank"),
-        ({"kind": "anthropic"}, "kind"),
+        ({"kind": "gemini"}, "kind"),
     ],
 )
 def test_create_validation(client, override, fragment) -> None:

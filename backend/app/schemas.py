@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-ProviderKind = Literal["ollama", "openai_compat"]
+ProviderKind = Literal["ollama", "openai_compat", "anthropic"]
 Role = Literal["system", "user", "assistant"]
 
 
@@ -38,6 +38,9 @@ class StreamChunk(BaseModel):
     delta: str = ""
     done: bool = False
     usage: dict[str, Any] | None = None
+    # On the done chunk: the model that actually answered, when it differs from
+    # the one requested (e.g. a server-side refusal fallback).
+    served_by: str | None = None
 
 
 class ProviderStatus(BaseModel):

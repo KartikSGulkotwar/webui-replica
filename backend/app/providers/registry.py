@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from app.crypto import EncryptionError, KeyCipher
 from app.models import Provider
+from app.providers.anthropic import AnthropicProvider
 from app.providers.base import BaseProvider, ProviderError
 from app.providers.ollama import OllamaProvider
 from app.providers.openai_compat import OpenAICompatProvider
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 PROVIDER_CLASSES: dict[str, type[BaseProvider]] = {
     "ollama": OllamaProvider,
     "openai_compat": OpenAICompatProvider,
+    "anthropic": AnthropicProvider,
 }
 
 

@@ -82,3 +82,11 @@ def test_seed_admin_needs_email_and_password(session, settings) -> None:
 
     settings.admin_email = "owner@example.com"
     assert seed_admin(session, settings) is False
+
+
+def test_seed_anthropic_from_env(session, settings, cipher) -> None:
+    settings.anthropic_api_key = "sk-ant-secret"
+    assert seed_providers(session, settings, cipher) == ["anthropic"]
+    row = session.get(Provider, "anthropic")
+    assert row.kind == "anthropic" and row.base_url == "https://api.anthropic.com"
+    assert cipher.decrypt(row.api_key_encrypted) == "sk-ant-secret"

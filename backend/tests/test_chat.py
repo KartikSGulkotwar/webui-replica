@@ -256,3 +256,55 @@ async def test_provider_error_class_is_reported(app, conv) -> None:
         )
     ]
     assert out == ['data: {"error": "model not loaded"}\n\n']
+
+
+# --- refusals and fallbacks ------------------------------------------------------
+
+
+class ServedByProvider(OllamaProvider):
+    id = "anthropic"
+
+    def __init__(self, chunks):
+        self._chunks = chunks
+
+    async def stream_chat(self, model, messages, params):
+        for c in self._chunks:
+            yield c
+
+
+async def test_reply_saved_under_the_model_that_answered(app, client, conv) -> None:
+    provider = ServedByProvider(
+        [StreamChunk(delta="Hi"), StreamChunk(done=True, served_by="claude-opus-4-8")]
+    )
+    out = [
+        e
+        async for e in stream_and_persist(
+            app.state.engine,
+            provider,
+            conv,
+            "anthropic:claude-opus-5-5",
+            "claude-opus-5-5",
+            [],
+            ChatParams(),
+        )
+    ]
+    done = json.loads(out[-1][6:])
+    assert done["model_id"] == "anthropic:claude-opus-4-8"
+    saved = client.get(f"/api/conversations/{conv}").json()["messages"]
+    assert saved[-1]["model_id"] == "anthropic:claude-opus-4-8"
+
+
+async def test_refusal_discards_partial_reply(app, client, conv) -> None:
+    from app.providers.base import RefusalError
+
+    provider = FakeProvider(
+        [StreamChunk(delta="Half an ans")], fail=RefusalError("Claude declined")
+    )
+    out = [
+        e
+        async for e in stream_and_persist(
+            app.state.engine, provider, conv, "a:m", "m", [], ChatParams()
+        )
+    ]
+    assert json.loads(out[-1][6:]) == {"error": "Claude declined", "discard": True}
+    assert client.get(f"/api/conversations/{conv}").json()["messages"] == []

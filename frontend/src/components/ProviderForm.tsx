@@ -96,7 +96,7 @@ export default function ProviderForm({
     }
   }
 
-  const showKeyField = kind === 'openai_compat'
+  const showKeyField = kind !== 'ollama'
   const keyBlocked = showKeyField && !!apiKey.trim() && !encryptionConfigured
 
   return (
@@ -179,19 +179,27 @@ export default function ProviderForm({
           }}
           required
           type="url"
-          placeholder={kind === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+          placeholder={
+            kind === 'ollama'
+              ? 'http://localhost:11434'
+              : kind === 'anthropic'
+                ? 'https://api.anthropic.com'
+                : 'https://api.example.com/v1'
+          }
           className={input}
         />
         <p className="mt-1 text-xs text-zinc-500">
-          {kind === 'ollama'
-            ? inDocker
-              ? 'Called from the backend container: use http://ollama:11434 for the bundled Ollama, or http://host.docker.internal:11434 for Ollama installed on your computer.'
-              : 'Called from the backend, e.g. http://localhost:11434.'
-            : `Usually ends in /v1. The backend calls {base URL}/models and {base URL}/chat/completions.${
-                inDocker
-                  ? ' For servers on your computer use host.docker.internal instead of localhost.'
-                  : ''
-              }`}
+          {kind === 'anthropic'
+            ? 'Use https://api.anthropic.com for Anthropic’s API. Models are listed automatically.'
+            : kind === 'ollama'
+              ? inDocker
+                ? 'Called from the backend container: use http://ollama:11434 for the bundled Ollama, or http://host.docker.internal:11434 for Ollama installed on your computer.'
+                : 'Called from the backend, e.g. http://localhost:11434.'
+              : `Usually ends in /v1. The backend calls {base URL}/models and {base URL}/chat/completions.${
+                  inDocker
+                    ? ' For servers on your computer use host.docker.internal instead of localhost.'
+                    : ''
+                }`}
         </p>
       </div>
 
@@ -214,7 +222,9 @@ export default function ProviderForm({
               placeholder={
                 provider?.has_key
                   ? 'Saved — leave blank to keep the current key'
-                  : 'Optional for local servers'
+                  : kind === 'anthropic'
+                    ? 'sk-ant-… (from console.anthropic.com)'
+                    : 'Optional for local servers'
               }
               className={`${input} pr-10 disabled:opacity-60`}
             />

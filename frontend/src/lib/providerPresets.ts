@@ -33,6 +33,12 @@ export function getPresets(inDocker: boolean): Preset[] {
 
 const REMOTE_PRESETS: Preset[] = [
   {
+    label: 'Anthropic',
+    kind: 'anthropic',
+    base_url: 'https://api.anthropic.com',
+    needsKey: true,
+  },
+  {
     label: 'Groq',
     kind: 'openai_compat',
     base_url: 'https://api.groq.com/openai/v1',
@@ -56,4 +62,5 @@ const REMOTE_PRESETS: Preset[] = [
 export const KIND_LABELS: Record<ProviderKind, string> = {
   ollama: 'Ollama',
   openai_compat: 'OpenAI-compatible',
+  anthropic: 'Anthropic (Claude)',
 }

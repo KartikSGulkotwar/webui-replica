@@ -58,6 +58,16 @@ def seed_providers(session: Session, settings: Settings, cipher: KeyCipher) -> l
                 api_key_encrypted=cipher.encrypt(key) if key else None,
             )
         )
+    if settings.anthropic_api_key:
+        rows.append(
+            Provider(
+                id="anthropic",
+                name="Anthropic",
+                kind="anthropic",
+                base_url="https://api.anthropic.com",
+                api_key_encrypted=cipher.encrypt(settings.anthropic_api_key),
+            )
+        )
     for row in rows:
         session.add(row)
     try:
