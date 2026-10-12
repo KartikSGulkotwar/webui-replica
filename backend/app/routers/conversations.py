@@ -67,8 +67,9 @@ def to_read(conversation: Conversation, shared: bool, snippet: str | None = None
 
 def message_read(m: Message) -> MessageRead:
     return MessageRead(
-        **m.model_dump(exclude={"sources_json", "conversation_id"}),
+        **m.model_dump(exclude={"sources_json", "tools_json", "conversation_id"}),
         sources=json.loads(m.sources_json) if m.sources_json else None,
+        tools=json.loads(m.tools_json) if m.tools_json else None,
     )
 
 

@@ -9,9 +9,11 @@ import ChatWindow from '../components/ChatWindow'
 import Composer from '../components/Composer'
 import { MenuIcon, PlusIcon } from '../components/icons'
 import MessageBubble from '../components/MessageBubble'
+import ToolsButton from '../components/ToolsButton'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatAttachments } from '../hooks/useChatAttachments'
+import { useSelectedTools, useToolList } from '../hooks/useTools'
 import { expectedCount, useChatStream } from '../hooks/useChatStream'
 import { useMe } from '../hooks/useAuth'
 import { conversationKey, useConversation } from '../hooks/useConversation'
@@ -32,6 +34,10 @@ export default function ChatPage() {
   const conversation = useConversation(id)
   const { pending, run, stop, isStreaming } = useChatStream(id)
   const queryClient = useQueryClient()
+  const toolList = useToolList()
+  const toolChoice = useSelectedTools()
+  // Only tools that are still enabled are sent.
+  const activeTools = toolChoice.selected.filter((t) => toolList.data?.some((i) => i.id === t))
   // System prompt chosen before the first message, when the chat doesn't exist yet.
   const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
   const attach = useChatAttachments(
@@ -190,6 +196,8 @@ export default function ChatPage() {
                 m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined
               }
               sources={m.sources}
+              toolCalls={m.tools}
+              toolInfo={toolList.data}
               actions={
                 m.role === 'assistant'
                   ? {
@@ -198,13 +206,24 @@ export default function ChatPage() {
                         rate.mutate({ messageId: m.id, rating, comment }),
                       onRegenerate:
                         m.id === lastAssistantId && selected
-                          ? () => run({ kind: 'regenerate' }, selected.id)
+                          ? () =>
+                              run({ kind: 'regenerate' }, selected.id, undefined, {
+                                tools: activeTools,
+                              })
                           : undefined,
                       busy: isStreaming || !selected,
                     }
                   : {
                       onEdit: selected
-                        ? (content) => run({ kind: 'edit', messageId: m.id, content }, selected.id)
+                        ? (content) =>
+                            run(
+                              { kind: 'edit', messageId: m.id, content },
+                              selected.id,
+                              undefined,
+                              {
+                                tools: activeTools,
+                              },
+                            )
                         : undefined,
                       busy: isStreaming,
                     }
@@ -219,6 +238,8 @@ export default function ChatPage() {
               model={modelLabel(p.modelId, models)}
               streaming={p.status === 'streaming'}
               sources={p.sources}
+              toolCalls={p.tools}
+              toolInfo={toolList.data}
             />
           )}
           {pendingError && (
@@ -229,7 +250,9 @@ export default function ChatPage() {
           {canRetry && (
             <button
               type="button"
-              onClick={() => run({ kind: 'regenerate' }, selected!.id)}
+              onClick={() =>
+                run({ kind: 'regenerate' }, selected!.id, undefined, { tools: activeTools })
+              }
               className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Get a reply
@@ -245,6 +268,7 @@ export default function ChatPage() {
             { kind: 'send', content: text },
             selected.id,
             id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
+            { tools: activeTools },
           )
           if (!id) setDraftSystemPrompt('')
         }}
@@ -252,7 +276,17 @@ export default function ChatPage() {
         restoreText={p?.notSent ? p.userContent : undefined}
         isStreaming={isStreaming}
         above={<AttachmentChips controls={attach} />}
-        leading={<AttachButton controls={attach} disabled={notFound} />}
+        leading={
+          <>
+            <AttachButton controls={attach} disabled={notFound} />
+            <ToolsButton
+              tools={toolList.data ?? []}
+              selected={activeTools}
+              onToggle={toolChoice.toggle}
+              disabled={notFound}
+            />
+          </>
+        }
         disabled={!!disabledReason || notFound || attach.busy}
         disabledReason={disabledReason}
       />

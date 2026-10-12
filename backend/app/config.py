@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     rag_embedding_model: str = ""
     rag_embedding_api_key: str = ""
 
+    # Tools the model may call (comma-separated); admins change this at runtime.
+    enabled_tools: str = "calculator,current_time,fetch_url"
+
     # Model preselected for visitors who haven't picked one, e.g. "groq:openai/gpt-oss-120b".
     default_model: str = ""
     # Messages per minute per client IP on /api/chat/stream; 0 disables.

@@ -199,7 +199,7 @@ class FakeProvider(OllamaProvider):
         self._chunks = chunks
         self._fail = fail
 
-    async def stream_chat(self, model, messages, params):
+    async def stream_chat(self, model, messages, params, tools=None):
         for chunk in self._chunks:
             yield chunk
         if self._fail:
@@ -267,7 +267,7 @@ class ServedByProvider(OllamaProvider):
     def __init__(self, chunks):
         self._chunks = chunks
 
-    async def stream_chat(self, model, messages, params):
+    async def stream_chat(self, model, messages, params, tools=None):
         for c in self._chunks:
             yield c
 

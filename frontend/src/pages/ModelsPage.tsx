@@ -14,6 +14,7 @@ import { useMe } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useCollections } from '../hooks/useKnowledge'
 import { useModels } from '../hooks/useModels'
+import { useToolList } from '../hooks/useTools'
 import type { CustomModel, CustomModelInput } from '../types/api'
 
 const input =
@@ -29,6 +30,7 @@ function Editor({ model, onDone }: { model?: CustomModel; onDone: () => void }) 
   const me = useMe()
   const models = useModels()
   const collections = useCollections()
+  const tools = useToolList()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<CustomModelInput>({
     name: model?.name ?? '',
@@ -37,6 +39,7 @@ function Editor({ model, onDone }: { model?: CustomModel; onDone: () => void }) 
     base_model_id: model?.base_model_id ?? '',
     system_prompt: model?.system_prompt ?? '',
     knowledge_ids: model?.knowledge.map((k) => k.id) ?? [],
+    tool_ids: model?.tool_ids ?? [],
     visibility: model?.visibility ?? 'private',
   })
   const set = <K extends keyof CustomModelInput>(k: K, v: CustomModelInput[K]) =>
@@ -186,6 +189,44 @@ function Editor({ model, onDone }: { model?: CustomModel; onDone: () => void }) 
           </div>
           <p className="mt-1 text-xs text-zinc-500">
             Searched automatically on every message; answers cite them.
+          </p>
+        </fieldset>
+      )}
+      {!!tools.data?.length && (
+        <fieldset>
+          <legend className={label}>Tools</legend>
+          <div className="flex flex-wrap gap-2">
+            {tools.data.map((t) => {
+              const on = form.tool_ids.includes(t.id)
+              return (
+                <label
+                  key={t.id}
+                  title={t.summary}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${
+                    on
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950'
+                      : 'border-zinc-300 dark:border-zinc-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() =>
+                      set(
+                        'tool_ids',
+                        on ? form.tool_ids.filter((i) => i !== t.id) : [...form.tool_ids, t.id],
+                      )
+                    }
+                    className="accent-indigo-600"
+                  />
+                  {t.emoji} {t.label}
+                </label>
+              )
+            })}
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            Always on when chatting with this model. Works best with models that support tool
+            calling.
           </p>
         </fieldset>
       )}

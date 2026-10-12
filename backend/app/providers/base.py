@@ -13,6 +13,7 @@ from app.schemas import (
     ProviderHealth,
     ProviderKind,
     StreamChunk,
+    ToolSpec,
 )
 
 # Listing models should be quick; streaming may sit idle while a large model loads.
@@ -85,10 +86,15 @@ class BaseProvider(ABC):
 
     @abstractmethod
     def stream_chat(
-        self, model: str, messages: list[ChatMessage], params: ChatParams
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        params: ChatParams,
+        tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[StreamChunk]:
         """Yield text deltas, then exactly one chunk with done=True (carrying usage
-        when the provider reports it). Raises ProviderError on failure."""
+        when the provider reports it, and tool_calls when the model wants tools
+        run before it continues). Raises ProviderError on failure."""
 
     async def health(self) -> ProviderHealth:
         start = time.perf_counter()

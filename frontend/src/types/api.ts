@@ -67,7 +67,25 @@ export interface Message {
   rating_comment?: string | null
   /** Document passages the reply was grounded in. */
   sources?: Source[] | null
+  /** Tools the model ran while writing the reply. */
+  tools?: ToolTrace[] | null
   created_at: string
+}
+
+export interface ToolTrace {
+  id: string
+  name: string
+  arguments: unknown
+  /** Absent while the tool is still running. */
+  output?: string
+  error?: boolean
+}
+
+export interface ToolInfo {
+  id: string
+  label: string
+  emoji: string
+  summary: string
 }
 
 export interface Source {
@@ -152,6 +170,8 @@ export interface Usage {
 export type StreamEvent =
   /** Sent first when the reply draws on documents. */
   | { sources: Source[] }
+  | { tool_call: { id: string; name: string; arguments: unknown } }
+  | { tool_result: { id: string; output: string; error: boolean } }
   | { delta: string }
   /** model_id is set when a different model answered (refusal fallback). */
   | { done: true; usage: Usage | null; message_id: number | null; model_id?: string }
@@ -164,6 +184,7 @@ export interface ChatStreamRequest {
   action?: 'send' | 'regenerate' | 'edit'
   message?: string
   message_id?: number
+  tools?: string[]
 }
 
 export interface Provider {
@@ -223,6 +244,7 @@ export interface User {
 export interface AdminSettings {
   enable_signup: boolean
   default_user_role: 'user' | 'pending'
+  enabled_tools?: string[]
 }
 
 export interface AdminModel {
@@ -242,6 +264,7 @@ export interface CustomModelInput {
   base_model_id: string
   system_prompt: string
   knowledge_ids: string[]
+  tool_ids: string[]
   visibility: 'private' | 'public'
 }
 

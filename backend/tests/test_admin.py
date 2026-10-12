@@ -50,6 +50,7 @@ def test_signup_settings(client, app) -> None:
     assert client.get("/api/admin/settings").json() == {
         "enable_signup": True,
         "default_user_role": "pending",
+        "enabled_tools": ["calculator", "current_time", "fetch_url"],
     }
     client.put("/api/admin/settings", json={"enable_signup": True, "default_user_role": "user"})
     with TestClient(app) as a:

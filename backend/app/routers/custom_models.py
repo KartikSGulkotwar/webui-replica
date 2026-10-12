@@ -11,6 +11,7 @@ from app.models import CustomModel, KnowledgeCollection, User, utcnow
 from app.providers.base import split_model_id
 from app.schemas import AttachmentRead, CustomModelRead, CustomModelWrite
 from app.seed import slugify
+from app.tools.registry import TOOLS
 
 router = APIRouter(prefix="/api/custom-models", tags=["custom models"])
 
@@ -25,7 +26,8 @@ def to_read(session: Session, c: CustomModel, user: User) -> CustomModelRead:
         ).all()
     )
     return CustomModelRead(
-        **c.model_dump(exclude={"owner_id", "knowledge_json"}),
+        **c.model_dump(exclude={"owner_id", "knowledge_json", "tools_json"}),
+        tool_ids=json.loads(c.tools_json),
         model_id=f"{PERSONA}:{c.id}",
         knowledge=[
             AttachmentRead(kind="collection", id=i, name=names[i]) for i in ids if i in names
@@ -75,6 +77,9 @@ async def validate(
         raise HTTPException(status_code=422, detail="Base model isn't available right now")
     if body.base_model_id in hidden_model_ids(session) and editor.role != "admin":
         raise HTTPException(status_code=422, detail="Base model isn't available")
+    unknown = set(body.tool_ids) - set(TOOLS)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown tool: {sorted(unknown)[0]}")
     if body.knowledge_ids:
         owned = set(
             session.exec(
@@ -95,6 +100,7 @@ def apply(c: CustomModel, body: CustomModelWrite) -> None:
     c.base_model_id = body.base_model_id
     c.system_prompt = body.system_prompt.strip()
     c.knowledge_json = json.dumps(list(dict.fromkeys(body.knowledge_ids)))
+    c.tools_json = json.dumps(list(dict.fromkeys(body.tool_ids)))
     c.visibility = body.visibility
     c.updated_at = utcnow()
 

@@ -40,6 +40,7 @@ def settings() -> Settings:
         openai_compat_api_key="",
         anthropic_api_key="",
         max_upload_mb=10,
+        enabled_tools="calculator,current_time,fetch_url",
         rag_embedding_engine="",
         rag_embedding_base_url="",
         rag_embedding_model="",

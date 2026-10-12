@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Rating, Role, Source } from '../types/api'
+import type { Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
 import SourcesList from './SourcesList'
+import ToolCallsView from './ToolCallsView'
 import { CheckIcon, CopyIcon, PencilIcon, RefreshIcon, ThumbDownIcon, ThumbUpIcon } from './icons'
 
 // Markdown + syntax highlighting is most of the bundle; load it after first paint.
@@ -29,6 +30,9 @@ interface Props {
   streaming?: boolean
   /** Document passages the reply cites as [1], [2]… */
   sources?: Source[] | null
+  /** Tools the model ran, with labels from the tool list. */
+  toolCalls?: ToolTrace[] | null
+  toolInfo?: ToolInfo[]
   /** Omit for read-only views (shared chats, in-flight messages). */
   actions?: MessageActions
 }
@@ -174,7 +178,16 @@ function FeedbackComment({ onSubmit }: { onSubmit: (comment: string) => void }) 
   )
 }
 
-function MessageBubble({ role, content, model, streaming, sources, actions }: Props) {
+function MessageBubble({
+  role,
+  content,
+  model,
+  streaming,
+  sources,
+  toolCalls,
+  toolInfo,
+  actions,
+}: Props) {
   const [editing, setEditing] = useState(false)
   const [askComment, setAskComment] = useState(false)
 
@@ -229,6 +242,7 @@ function MessageBubble({ role, content, model, streaming, sources, actions }: Pr
           {model.provider && <span>· {model.provider}</span>}
         </span>
       )}
+      {toolCalls && toolCalls.length > 0 && <ToolCallsView calls={toolCalls} tools={toolInfo} />}
       {content ? (
         <div className={streaming ? 'streaming-cursor' : undefined}>
           <Suspense fallback={<PlainText content={content} />}>
@@ -236,7 +250,8 @@ function MessageBubble({ role, content, model, streaming, sources, actions }: Pr
           </Suspense>
         </div>
       ) : (
-        streaming && (
+        streaming &&
+        !toolCalls?.some((c) => c.output === undefined) && (
           <div className="flex gap-1 py-2" aria-label="Waiting for response">
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:-0.3s]" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-400 [animation-delay:-0.15s]" />
@@ -245,7 +260,7 @@ function MessageBubble({ role, content, model, streaming, sources, actions }: Pr
         )
       )}
       {sources && sources.length > 0 && <SourcesList sources={sources} />}
-      {actions && content && (
+      {actions && (content || toolCalls?.length) && (
         <div className="flex flex-col gap-1">
           <div className="-ml-1.5 flex gap-0.5">
             <CopyButton text={content} />

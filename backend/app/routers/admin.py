@@ -100,8 +100,13 @@ def read_settings(request: Request, session: SessionDep, admin: AdminUserDep) ->
 
 
 @router.put("/settings", response_model=AdminSettings)
-def write_settings(body: AdminSettings, session: SessionDep, admin: AdminUserDep) -> AdminSettings:
-    return save_admin_settings(session, body)
+def write_settings(
+    body: AdminSettings, request: Request, session: SessionDep, admin: AdminUserDep
+) -> AdminSettings:
+    try:
+        return save_admin_settings(session, body, request.app.state.settings)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 # --- documents / embeddings -----------------------------------------------------

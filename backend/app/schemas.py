@@ -7,9 +7,33 @@ ProviderKind = Literal["ollama", "openai_compat", "anthropic"]
 Role = Literal["system", "user", "assistant"]
 
 
+class ToolCall(BaseModel):
+    id: str
+    name: str
+    arguments: Any  # parsed JSON; validated by the tool before it runs
+
+
+class ToolSpec(BaseModel):
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
 class ChatMessage(BaseModel):
-    role: Role
-    content: str
+    """A turn sent to a provider. Tool turns only exist inside one request's
+    agent loop; saved history is plain user/assistant text."""
+
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str = ""
+    # assistant: the tools it asked to run
+    tool_calls: list[ToolCall] | None = None
+    # tool: which call this answers, and that tool's name
+    tool_call_id: str | None = None
+    name: str | None = None
+    is_error: bool = False
+    # assistant: the provider's own representation of the turn, replayed
+    # verbatim (e.g. Claude content blocks with thinking signatures)
+    provider_state: Any = None
 
 
 class ChatParams(BaseModel):
@@ -49,6 +73,9 @@ class StreamChunk(BaseModel):
     # On the done chunk: the model that actually answered, when it differs from
     # the one requested (e.g. a server-side refusal fallback).
     served_by: str | None = None
+    # On the done chunk: tools the model wants run before it continues.
+    tool_calls: list[ToolCall] | None = None
+    provider_state: Any = None
 
 
 class ProviderStatus(BaseModel):
@@ -107,6 +134,7 @@ class MessageRead(BaseModel):
     rating: Literal[1, -1] | None = None
     rating_comment: str | None = None
     sources: list["SourceRead"] | None = None
+    tools: list["ToolTraceRead"] | None = None
     created_at: datetime
 
 
@@ -116,6 +144,21 @@ class SourceRead(BaseModel):
     filename: str
     page: int | None
     text: str
+
+
+class ToolTraceRead(BaseModel):
+    id: str
+    name: str
+    arguments: Any
+    output: str
+    error: bool
+
+
+class ToolInfo(BaseModel):
+    id: str
+    label: str
+    emoji: str
+    summary: str
 
 
 class AttachmentRead(BaseModel):
@@ -166,6 +209,8 @@ class ChatStreamRequest(BaseModel):
     action: Literal["send", "regenerate", "edit"] = "send"
     message: str | None = Field(default=None, min_length=1, max_length=100_000)
     message_id: int | None = None
+    # Tool IDs the model may call this turn (custom models add their own).
+    tools: list[str] = Field(default_factory=list, max_length=20)
     params: ChatParams = Field(default_factory=ChatParams)
 
     @model_validator(mode="after")
@@ -312,6 +357,8 @@ class AdminUserUpdate(BaseModel):
 class AdminSettings(BaseModel):
     enable_signup: bool
     default_user_role: Literal["user", "pending"]
+    # Omitted on update: keep the current tools.
+    enabled_tools: list[str] | None = None
 
 
 # --- knowledge (RAG) ---------------------------------------------------------------
@@ -395,6 +442,7 @@ class CustomModelWrite(BaseModel):
     base_model_id: str = Field(min_length=3, max_length=300)
     system_prompt: str = Field(default="", max_length=20_000)
     knowledge_ids: list[str] = Field(default_factory=list, max_length=20)
+    tool_ids: list[str] = Field(default_factory=list, max_length=20)
     visibility: Literal["private", "public"] = "private"
 
 
@@ -407,6 +455,7 @@ class CustomModelRead(BaseModel):
     base_model_id: str
     system_prompt: str
     knowledge: list[AttachmentRead]
+    tool_ids: list[str]
     visibility: Literal["private", "public"]
     is_owner: bool
     created_at: datetime

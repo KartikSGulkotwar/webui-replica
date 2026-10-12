@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Engine
 from sqlmodel import Session
 
+from app.app_settings import get_admin_settings
 from app.auth import ActiveUserDep
 from app.catalog import resolve_model
 from app.db import SessionDep
@@ -24,13 +25,18 @@ from app.rag.service import (
 )
 from app.ratelimit import limit_chat
 from app.routers.conversations import get_conversation_or_404, list_messages
-from app.schemas import ChatMessage, ChatParams, ChatStreamRequest
+from app.schemas import ChatMessage, ChatParams, ChatStreamRequest, ToolSpec
+from app.tools.registry import TOOLS, Tool, ToolContext, ToolOutcome, run_tool
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 TITLE_WORDS = 6
+# Tool-calling rounds before the model must answer without tools.
+MAX_TOOL_ROUNDS = 5
+# How much of a tool's output is shown with the reply (the model gets more).
+TRACE_OUTPUT_CHARS = 2000
 TITLE_MAX_CHARS = 60
 
 
@@ -55,6 +61,7 @@ def save_assistant_message(
     model_id: str,
     content: str,
     sources: list[dict] | None = None,
+    tools: list[dict] | None = None,
 ) -> int | None:
     with Session(engine) as session:
         conversation = session.get(Conversation, conversation_id)
@@ -66,6 +73,7 @@ def save_assistant_message(
             content=content,
             model_id=model_id,
             sources_json=json.dumps(sources) if sources else None,
+            tools_json=json.dumps(tools) if tools else None,
         )
         conversation.updated_at = utcnow()
         session.add(message)
@@ -83,16 +91,27 @@ async def stream_and_persist(
     history: list[ChatMessage],
     params: ChatParams,
     sources: list[dict] | None = None,
+    tools: list[Tool] | None = None,
+    tool_context: ToolContext | None = None,
 ) -> AsyncIterator[str]:
     """Relay provider chunks as normalized SSE and save the assistant reply.
 
+    With tools, this is an agent loop: when the model asks for tools, they run,
+    their results go back to the model, and it continues (up to MAX_TOOL_ROUNDS,
+    then one last round without tools so it must answer).
+
     The reply is saved however the stream ends: on completion, on a provider
     error, or when the client disconnects (Stop button), so partial answers
-    survive a refresh. Nothing is saved if no text was produced, or if the
+    survive a refresh. Nothing is saved if nothing was produced, or if the
     model declined (a refusal's partial text is discarded).
     """
     parts: list[str] = []
+    trace: list[dict] = []  # tool calls and their results, shown with the reply
     saved = False
+    specs = [
+        ToolSpec(name=t.id, description=t.description, parameters=t.parameters) for t in tools or []
+    ]
+    allowed = {t.id for t in tools or []}
 
     # Changes if a different model answered (server-side refusal fallback).
     answered_by = model_id
@@ -101,31 +120,90 @@ async def stream_and_persist(
         nonlocal saved
         saved = True
         content = "".join(parts)
-        if not content:
+        if not content.strip() and not trace:
             return None
-        return save_assistant_message(engine, conversation_id, answered_by, content, sources)
+        return save_assistant_message(engine, conversation_id, answered_by, content, sources, trace)
 
+    messages = list(history)
     try:
         if sources:
             # Sent first so the citations can be shown while the answer streams.
             yield sse({"sources": sources})
-        async for chunk in provider.stream_chat(model, history, params):
-            if chunk.delta:
-                parts.append(chunk.delta)
-                yield sse({"delta": chunk.delta})
-            if chunk.done:
-                if chunk.served_by:
-                    answered_by = f"{provider.id}:{chunk.served_by}"
+        for round_number in range(MAX_TOOL_ROUNDS + 1):
+            offered = specs if specs and round_number < MAX_TOOL_ROUNDS else None
+            round_text: list[str] = []
+            final = None
+            async for chunk in provider.stream_chat(model, messages, params, offered):
+                if chunk.delta:
+                    if not round_text and parts:
+                        # Text after a tool call starts a new paragraph.
+                        parts.append("\n\n")
+                        yield sse({"delta": "\n\n"})
+                    round_text.append(chunk.delta)
+                    parts.append(chunk.delta)
+                    yield sse({"delta": chunk.delta})
+                if chunk.done:
+                    final = chunk
+                    break
+            if final is None:
+                raise ProviderError("The model stopped without finishing its reply")
+            if final.served_by:
+                answered_by = f"{provider.id}:{final.served_by}"
+
+            if not final.tool_calls:
                 message_id = await run_in_threadpool(save)
-                done: dict = {"done": True, "usage": chunk.usage, "message_id": message_id}
-                if chunk.served_by:
+                if message_id is None and not "".join(parts).strip() and not trace:
+                    # Nothing to show (some small models emit a tool call the
+                    # server can't parse); say so rather than ending silently.
+                    yield sse({"error": "The model returned an empty reply. Try again."})
+                    return
+                done: dict = {"done": True, "usage": final.usage, "message_id": message_id}
+                if final.served_by:
                     done["model_id"] = answered_by
                 yield sse(done)
                 return
+
+            messages.append(
+                ChatMessage(
+                    role="assistant",
+                    content="".join(round_text),
+                    tool_calls=final.tool_calls,
+                    provider_state=final.provider_state,
+                )
+            )
+            for call in final.tool_calls:
+                yield sse(
+                    {"tool_call": {"id": call.id, "name": call.name, "arguments": call.arguments}}
+                )
+                if call.name in allowed and tool_context is not None:
+                    outcome = await run_tool(call.name, call.arguments, tool_context)
+                else:
+                    outcome = ToolOutcome(f"Tool '{call.name}' isn't enabled for this chat", True)
+                shown = outcome.output[:TRACE_OUTPUT_CHARS]
+                trace.append(
+                    {
+                        "id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                        "output": shown,
+                        "error": outcome.error,
+                    }
+                )
+                yield sse({"tool_result": {"id": call.id, "output": shown, "error": outcome.error}})
+                messages.append(
+                    ChatMessage(
+                        role="tool",
+                        tool_call_id=call.id,
+                        name=call.name,
+                        content=outcome.output,
+                        is_error=outcome.error,
+                    )
+                )
     except RefusalError as exc:
         # A declined reply isn't an answer: drop the partial text and tell the
         # browser to discard what it already showed.
         parts.clear()
+        trace.clear()
         await run_in_threadpool(save)
         yield sse({"error": str(exc), "discard": True})
     except ProviderError as exc:
@@ -221,6 +299,12 @@ async def chat_stream(
             sources = sources_payload(found)
             history.insert(len(prompts), ChatMessage(role="system", content=build_context(found)))
 
+    # Tools: what this turn asked for plus the custom model's defaults, limited
+    # to the ones an admin has enabled.
+    enabled = set(get_admin_settings(session, request.app.state.settings).enabled_tools)
+    wanted = set(body.tools) | set(resolved.tool_ids)
+    tools = [t for t in TOOLS.values() if t.id in wanted and t.id in enabled]
+
     return StreamingResponse(
         stream_and_persist(
             request.app.state.engine,
@@ -231,6 +315,8 @@ async def chat_stream(
             history,
             body.params,
             sources,
+            tools,
+            ToolContext(http=request.app.state.http),
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

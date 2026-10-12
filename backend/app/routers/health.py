@@ -5,9 +5,11 @@ from sqlmodel import Session
 
 from app import __version__
 from app.app_settings import get_admin_settings
+from app.auth import ActiveUserDep
 from app.oauth import configured_providers
 from app.routers.auth import has_real_users
-from app.schemas import AppConfig
+from app.schemas import AppConfig, ToolInfo
+from app.tools.registry import TOOLS
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -34,3 +36,19 @@ def config(request: Request) -> AppConfig:
         oauth_providers=list(configured_providers(settings)),
         max_upload_mb=settings.max_upload_mb,
     )
+
+
+@router.get("/tools", response_model=list[ToolInfo])
+def list_tools(request: Request, user: ActiveUserDep, all: bool = False) -> list[ToolInfo]:
+    """Tools an admin has enabled, for the tools menu in chat.
+
+    Admins can pass ?all=true to list every built-in tool (for the settings page).
+    """
+    with Session(request.app.state.engine) as session:
+        enabled = get_admin_settings(session, request.app.state.settings).enabled_tools
+    show_all = all and user.role == "admin"
+    return [
+        ToolInfo(id=t.id, label=t.label, emoji=t.emoji, summary=t.summary)
+        for t in TOOLS.values()
+        if show_all or t.id in enabled
+    ]

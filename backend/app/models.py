@@ -69,6 +69,8 @@ class Message(SQLModel, table=True):
     rating_comment: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     # Document excerpts the reply was grounded in (JSON list), for citations.
     sources_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Tools the model ran while writing this reply (JSON list), shown with it.
+    tools_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -249,6 +251,10 @@ class CustomModel(SQLModel, table=True):
     )
     # JSON list of knowledge collection IDs owned by the creator.
     knowledge_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
+    )
+    # JSON list of tool IDs always offered when chatting with this model.
+    tools_json: str = Field(
         default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
     )
     # "private": only the creator; "public": every approved user (admins only).

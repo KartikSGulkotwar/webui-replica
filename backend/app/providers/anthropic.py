@@ -8,7 +8,15 @@ import anthropic
 import httpx
 
 from app.providers.base import BaseProvider, ProviderError, RefusalError
-from app.schemas import ChatMessage, ChatParams, ModelInfo, ProviderKind, StreamChunk
+from app.schemas import (
+    ChatMessage,
+    ChatParams,
+    ModelInfo,
+    ProviderKind,
+    StreamChunk,
+    ToolCall,
+    ToolSpec,
+)
 
 DEFAULT_BASE_URL = "https://api.anthropic.com"
 # Streaming, so a generous ceiling doesn't risk HTTP timeouts; capped per model
@@ -53,11 +61,60 @@ def describe_error(exc: anthropic.AnthropicError) -> str:
     return str(exc)
 
 
-def split_system(messages: list[ChatMessage]) -> tuple[str | None, list[dict[str, str]]]:
-    """Claude takes the system prompt as a top-level field, not a message."""
+def split_system(messages: list[ChatMessage]) -> tuple[str | None, list[dict[str, Any]]]:
+    """Claude takes the system prompt as a top-level field, not a message, and
+    tool results as tool_result blocks in a user turn."""
     system = "\n\n".join(m.content for m in messages if m.role == "system") or None
-    rest = [{"role": m.role, "content": m.content} for m in messages if m.role != "system"]
+    rest: list[dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
+    for m in messages:
+        if m.role == "system":
+            continue
+        if m.role == "tool":
+            # All results for one assistant turn go back in a single user message.
+            results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": m.tool_call_id,
+                    "content": m.content,
+                    "is_error": m.is_error,
+                }
+            )
+            continue
+        if results:
+            rest.append({"role": "user", "content": results})
+            results = []
+        if m.role == "assistant" and m.provider_state is not None:
+            # Claude's own blocks, unchanged (thinking blocks must be replayed as-is).
+            rest.append({"role": "assistant", "content": m.provider_state})
+        elif m.role == "assistant" and m.tool_calls:
+            blocks: list[dict[str, Any]] = (
+                [{"type": "text", "text": m.content}] if m.content else []
+            )
+            blocks += [
+                {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
+                for c in m.tool_calls
+            ]
+            rest.append({"role": "assistant", "content": blocks})
+        else:
+            rest.append({"role": m.role, "content": m.content})
+    if results:
+        rest.append({"role": "user", "content": results})
     return system, rest
+
+
+def replayable_blocks(content: list[Any]) -> list[dict[str, Any]]:
+    """The assistant turn to send back with tool results. After a mid-output
+    refusal fallback, model-internal blocks before the last fallback marker are
+    dropped, as the API requires."""
+    blocks = [b.model_dump(mode="json", exclude_none=True) for b in content]
+    last_fallback = max(
+        (i for i, b in enumerate(blocks) if b.get("type") == "fallback"), default=-1
+    )
+    internal = {"thinking", "redacted_thinking", "tool_use"}
+    return [
+        b for i, b in enumerate(blocks) if not (i < last_fallback and b.get("type") in internal)
+    ]
 
 
 def usage_dict(usage: Any) -> dict[str, int] | None:
@@ -119,7 +176,11 @@ class AnthropicProvider(BaseProvider):
         return min(requested or DEFAULT_MAX_TOKENS, cap)
 
     async def stream_chat(
-        self, model: str, messages: list[ChatMessage], params: ChatParams
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        params: ChatParams,
+        tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[StreamChunk]:
         system, history = split_system(messages)
         request: dict[str, Any] = {
@@ -131,6 +192,18 @@ class AnthropicProvider(BaseProvider):
         }
         if system:
             request["system"] = system
+        if tools:
+            # Streaming, so inputs stream as generated (eager); every input is
+            # validated by the tool before it runs.
+            request["tools"] = [
+                {
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.parameters,
+                    "eager_input_streaming": True,
+                }
+                for t in tools
+            ]
         # params.temperature is intentionally not sent: current Claude models
         # reject non-default sampling parameters.
 
@@ -150,6 +223,11 @@ class AnthropicProvider(BaseProvider):
                 final = await stream.get_final_message()
         except anthropic.AnthropicError as exc:
             raise ProviderError(describe_error(exc)) from exc
+        except ValueError as exc:
+            # The SDK couldn't parse a streamed tool input at all.
+            raise ProviderError(
+                "Claude sent a tool call that couldn't be read. Please try again."
+            ) from exc
 
         if final.stop_reason == "refusal":
             details = getattr(final, "stop_details", None)
@@ -160,4 +238,15 @@ class AnthropicProvider(BaseProvider):
                 + ". Try rephrasing, or pick a different model."
             )
         served_by = final.model if final.model and final.model != model else None
-        yield StreamChunk(done=True, usage=usage_dict(final.usage), served_by=served_by)
+        tool_uses = [b for b in final.content if b.type == "tool_use"]
+        if tool_uses and final.stop_reason == "max_tokens":
+            # A cut-off input can parse as a valid partial object: never run it.
+            raise ProviderError("The tool call was cut off before it finished. Please try again.")
+        calls = [ToolCall(id=b.id, name=b.name, arguments=b.input) for b in tool_uses]
+        yield StreamChunk(
+            done=True,
+            usage=usage_dict(final.usage),
+            served_by=served_by,
+            tool_calls=calls or None,
+            provider_state=replayable_blocks(final.content) if calls else None,
+        )

@@ -11,7 +11,15 @@ from app.providers.base import (
     describe_http_error,
     error_from_response,
 )
-from app.schemas import ChatMessage, ChatParams, ModelInfo, ProviderKind, StreamChunk
+from app.schemas import (
+    ChatMessage,
+    ChatParams,
+    ModelInfo,
+    ProviderKind,
+    StreamChunk,
+    ToolCall,
+    ToolSpec,
+)
 
 
 def parse_ollama_line(line: str) -> StreamChunk | None:
@@ -36,8 +44,50 @@ def parse_ollama_line(line: str) -> StreamChunk | None:
         # The final line can still carry trailing content.
         delta = (data.get("message") or {}).get("content", "")
         return StreamChunk(delta=delta, done=True, usage=usage or None)
-    delta = (data.get("message") or {}).get("content", "")
+    message = data.get("message") or {}
+    delta = message.get("content", "")
+    calls = message.get("tool_calls")
+    if calls:
+        # Ollama sends whole tool calls (no IDs) in a regular chunk.
+        return StreamChunk(
+            delta=delta,
+            tool_calls=[
+                ToolCall(
+                    id=f"call_{i}",
+                    name=(c.get("function") or {}).get("name", ""),
+                    arguments=(c.get("function") or {}).get("arguments", {}),
+                )
+                for i, c in enumerate(calls)
+            ],
+        )
     return StreamChunk(delta=delta) if delta else None
+
+
+def to_wire(messages: list[ChatMessage]) -> list[dict]:
+    """Our turns in Ollama /api/chat format, including tool turns."""
+    out: list[dict] = []
+    for m in messages:
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.content,
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": c.name,
+                                "arguments": c.arguments if isinstance(c.arguments, dict) else {},
+                            }
+                        }
+                        for c in m.tool_calls
+                    ],
+                }
+            )
+        elif m.role == "tool":
+            out.append({"role": "tool", "content": m.content, "tool_name": m.name})
+        else:
+            out.append({"role": m.role, "content": m.content})
+    return out
 
 
 # Embedding-only models (for document search) can't chat. Ollama's tag list
@@ -64,7 +114,11 @@ class OllamaProvider(BaseProvider):
         return [self._model_info(n) for n in sorted(names)]
 
     async def stream_chat(
-        self, model: str, messages: list[ChatMessage], params: ChatParams
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        params: ChatParams,
+        tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[StreamChunk]:
         options: dict = {}
         if params.temperature is not None:
@@ -73,9 +127,21 @@ class OllamaProvider(BaseProvider):
             options["num_predict"] = params.max_tokens
         body = {
             "model": model,
-            "messages": [m.model_dump() for m in messages],
+            "messages": to_wire(messages),
             "stream": True,
         }
+        if tools:
+            body["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in tools
+            ]
         if options:
             body["options"] = options
 
@@ -85,10 +151,22 @@ class OllamaProvider(BaseProvider):
             ) as resp:
                 if resp.status_code >= 400:
                     raise error_from_response(resp, await resp.aread())
+                calls: list[ToolCall] = []
                 async for line in resp.aiter_lines():
                     chunk = parse_ollama_line(line)
                     if chunk is None:
                         continue
+                    if chunk.tool_calls and not chunk.done:
+                        # Renumber IDs so calls from several chunks stay unique.
+                        calls += [
+                            c.model_copy(update={"id": f"call_{len(calls) + i}"})
+                            for i, c in enumerate(chunk.tool_calls)
+                        ]
+                        chunk = chunk.model_copy(update={"tool_calls": None})
+                        if not chunk.delta:
+                            continue
+                    if chunk.done and calls:
+                        chunk = chunk.model_copy(update={"tool_calls": calls})
                     yield chunk
                     if chunk.done:
                         return

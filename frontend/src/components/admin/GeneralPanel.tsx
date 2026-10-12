@@ -1,14 +1,24 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { errorMessage } from '../../api/client'
+import { listAllTools } from '../../api/tools'
 import { useAdminSettings, useSaveAdminSettings } from '../../hooks/useAdmin'
 import type { AdminSettings } from '../../types/api'
 
 export default function GeneralPanel() {
   const settings = useAdminSettings()
   const save = useSaveAdminSettings()
+  const allTools = useQuery({ queryKey: ['tools', 'all'], queryFn: listAllTools })
+  const queryClient = useQueryClient()
 
   const update = (patch: Partial<AdminSettings>) => {
-    if (settings.data) save.mutate({ ...settings.data, ...patch })
+    if (settings.data)
+      save.mutate(
+        { ...settings.data, ...patch },
+        // The chat's tools menu lists only enabled tools.
+        { onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tools'] }) },
+      )
   }
+  const enabledTools = settings.data?.enabled_tools ?? []
 
   return (
     <div className="space-y-4">
@@ -56,6 +66,48 @@ export default function GeneralPanel() {
             </select>
           </label>
         </div>
+      )}
+      {settings.data && !!allTools.data?.length && (
+        <>
+          <div className="pt-4">
+            <h2 className="text-lg font-semibold">Tools</h2>
+            <p className="text-sm text-zinc-500">
+              Built-in tools people can let models use in chat (🔧 next to the message box).
+            </p>
+          </div>
+          <div className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+            {allTools.data.map((t) => {
+              const on = enabledTools.includes(t.id)
+              return (
+                <label
+                  key={t.id}
+                  className="flex cursor-pointer items-center justify-between gap-4 p-4"
+                >
+                  <span>
+                    <span className="block text-sm font-medium">
+                      {t.emoji} {t.label}
+                    </span>
+                    <span className="block text-xs text-zinc-500">{t.summary}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={on}
+                    onChange={() =>
+                      update({
+                        enabled_tools: on
+                          ? enabledTools.filter((i) => i !== t.id)
+                          : [...enabledTools, t.id],
+                      })
+                    }
+                    disabled={save.isPending}
+                    className="h-4 w-4 accent-indigo-600"
+                  />
+                </label>
+              )
+            })}
+          </div>
+        </>
       )}
       {save.isError && <p className="text-sm text-red-500">{errorMessage(save.error)}</p>}
       {save.isSuccess && <p className="text-sm text-emerald-600 dark:text-emerald-400">Saved.</p>}

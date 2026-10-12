@@ -128,6 +128,10 @@ class ResolvedModel:
     def knowledge_ids(self) -> list[str]:
         return json.loads(self.persona.knowledge_json) if self.persona else []
 
+    @property
+    def tool_ids(self) -> list[str]:
+        return json.loads(self.persona.tools_json) if self.persona else []
+
 
 def resolve_model(session: Session, user: User, model_id: str) -> ResolvedModel:
     """Map a model ID from the menu to the provider model that will answer.

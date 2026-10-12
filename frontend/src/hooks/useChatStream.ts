@@ -4,7 +4,13 @@ import { useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import { createConversation, deleteConversation } from '../api/conversations'
 import { streamChat } from '../api/stream'
-import type { Attachment, ChatStreamRequest, ConversationDetail, Source } from '../types/api'
+import type {
+  Attachment,
+  ChatStreamRequest,
+  ConversationDetail,
+  Source,
+  ToolTrace,
+} from '../types/api'
 import { conversationKey } from './useConversation'
 
 export type StreamStatus = 'streaming' | 'done' | 'stopped' | 'error'
@@ -32,12 +38,19 @@ export interface PendingExchange {
   notSent?: boolean
   /** Document passages this reply draws on (arrive before the text). */
   sources?: Source[]
+  /** Tools run so far, updated as calls start and finish. */
+  tools?: ToolTrace[]
 }
 
 /** Settings for a chat that doesn't exist yet; applied when the first message creates it. */
 export interface NewChatOptions {
   systemPrompt?: string
   attachments?: Attachment[]
+}
+
+export interface RunOptions {
+  /** Tools the model may call for this message. */
+  tools?: string[]
 }
 
 /** How many server messages there will be once this exchange is saved. */
@@ -59,7 +72,12 @@ export function useChatStream(conversationId: string | undefined) {
   }, [conversationId])
 
   const run = useCallback(
-    async (action: ChatAction, modelId: string, newChat: NewChatOptions = {}) => {
+    async (
+      action: ChatAction,
+      modelId: string,
+      newChat: NewChatOptions = {},
+      options: RunOptions = {},
+    ) => {
       if (abortRef.current) return
       if (!conversationId && action.kind !== 'send') return
       const controller = new AbortController()
@@ -141,6 +159,7 @@ export function useChatStream(conversationId: string | undefined) {
       })
 
       const body: ChatStreamRequest = { conversation_id: id, model_id: modelId }
+      if (options.tools?.length) body.tools = options.tools
       if (action.kind === 'send') body.message = action.content
       if (action.kind === 'regenerate') body.action = 'regenerate'
       if (action.kind === 'edit') {
@@ -164,6 +183,26 @@ export function useChatStream(conversationId: string | undefined) {
           onEvent: (event) => {
             if ('sources' in event) {
               update({ sources: event.sources })
+            } else if ('tool_call' in event) {
+              setPending((p) =>
+                p && p.conversationId === id
+                  ? { ...p, tools: [...(p.tools ?? []), { ...event.tool_call }] }
+                  : p,
+              )
+            } else if ('tool_result' in event) {
+              const result = event.tool_result
+              setPending((p) =>
+                p && p.conversationId === id
+                  ? {
+                      ...p,
+                      tools: (p.tools ?? []).map((t) =>
+                        t.id === result.id
+                          ? { ...t, output: result.output, error: result.error }
+                          : t,
+                      ),
+                    }
+                  : p,
+              )
             } else if ('delta' in event) {
               setPending((p) =>
                 p && p.conversationId === id ? { ...p, text: p.text + event.delta } : p,
@@ -171,7 +210,7 @@ export function useChatStream(conversationId: string | undefined) {
             } else if ('error' in event) {
               final = { status: 'error', error: event.error }
               // A declined reply isn't an answer: hide what was already shown.
-              if (event.discard) update({ text: '' })
+              if (event.discard) update({ text: '', tools: [] })
             } else if ('done' in event) {
               final = { status: 'done' }
               // A fallback model answered: label the reply with it.

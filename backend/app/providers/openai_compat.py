@@ -11,7 +11,15 @@ from app.providers.base import (
     describe_http_error,
     error_from_response,
 )
-from app.schemas import ChatMessage, ChatParams, ModelInfo, ProviderKind, StreamChunk
+from app.schemas import (
+    ChatMessage,
+    ChatParams,
+    ModelInfo,
+    ProviderKind,
+    StreamChunk,
+    ToolCall,
+    ToolSpec,
+)
 
 DONE = object()  # sentinel for the "[DONE]" terminator
 
@@ -56,13 +64,57 @@ def parse_sse_line(line: str) -> StreamChunk | object | None:
 
     choices = data.get("choices") or []
     delta = ""
+    fragments = None
     if choices:
-        delta = (choices[0].get("delta") or {}).get("content") or ""
+        choice_delta = choices[0].get("delta") or {}
+        delta = choice_delta.get("content") or ""
+        fragments = choice_delta.get("tool_calls") or None
     usage = data.get("usage")
-    if usage:
+    if usage or fragments:
         # Usage arrives on its own (choices empty) when stream_options.include_usage is set.
-        return StreamChunk(delta=delta, usage=usage)
+        return StreamChunk(delta=delta, usage=usage or None, provider_state=fragments)
     return StreamChunk(delta=delta) if delta else None
+
+
+def to_wire(messages: list[ChatMessage]) -> list[dict]:
+    """Our turns in OpenAI chat-completions format, including tool turns."""
+    out: list[dict] = []
+    for m in messages:
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.content or None,
+                    "tool_calls": [
+                        {
+                            "id": c.id,
+                            "type": "function",
+                            "function": {"name": c.name, "arguments": json.dumps(c.arguments)},
+                        }
+                        for c in m.tool_calls
+                    ],
+                }
+            )
+        elif m.role == "tool":
+            out.append({"role": "tool", "tool_call_id": m.tool_call_id, "content": m.content})
+        else:
+            out.append({"role": m.role, "content": m.content})
+    return out
+
+
+def assemble_tool_calls(parts: dict[int, dict]) -> list[ToolCall]:
+    """Join streamed tool-call fragments (keyed by index) into whole calls."""
+    calls = []
+    for index in sorted(parts):
+        part = parts[index]
+        try:
+            arguments = json.loads(part["arguments"] or "{}")
+        except json.JSONDecodeError:
+            arguments = part["arguments"]  # the tool reports it as invalid
+        calls.append(
+            ToolCall(id=part["id"] or f"call_{index}", name=part["name"], arguments=arguments)
+        )
+    return calls
 
 
 class OpenAICompatProvider(BaseProvider):
@@ -77,20 +129,37 @@ class OpenAICompatProvider(BaseProvider):
         return [self._model_info(i) for i in sorted(ids)]
 
     async def stream_chat(
-        self, model: str, messages: list[ChatMessage], params: ChatParams
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        params: ChatParams,
+        tools: list[ToolSpec] | None = None,
     ) -> AsyncIterator[StreamChunk]:
         body: dict = {
             "model": model,
-            "messages": [m.model_dump() for m in messages],
+            "messages": to_wire(messages),
             "stream": True,
             "stream_options": {"include_usage": True},
         }
+        if tools:
+            body["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                }
+                for t in tools
+            ]
         if params.temperature is not None:
             body["temperature"] = params.temperature
         if params.max_tokens is not None:
             body["max_tokens"] = params.max_tokens
 
         usage: dict | None = None
+        calls: dict[int, dict] = {}
         try:
             async with self._client.stream(
                 "POST",
@@ -110,9 +179,21 @@ class OpenAICompatProvider(BaseProvider):
                     assert isinstance(event, StreamChunk)
                     if event.usage:
                         usage = event.usage
+                    for fragment in event.provider_state or []:
+                        part = calls.setdefault(
+                            fragment.get("index", 0), {"id": None, "name": "", "arguments": ""}
+                        )
+                        part["id"] = fragment.get("id") or part["id"]
+                        function = fragment.get("function") or {}
+                        part["name"] += function.get("name") or ""
+                        args = function.get("arguments")
+                        # Usually a string built up in pieces; some servers send an object.
+                        part["arguments"] += (
+                            args if isinstance(args, str) else json.dumps(args or {})
+                        )
                     if event.delta:
                         yield StreamChunk(delta=event.delta)
         except httpx.HTTPError as exc:
             raise ProviderError(describe_http_error(exc, self.base_url)) from exc
         # Some servers close without "[DONE]"; treat a clean close as completion.
-        yield StreamChunk(done=True, usage=usage)
+        yield StreamChunk(done=True, usage=usage, tool_calls=assemble_tool_calls(calls) or None)
