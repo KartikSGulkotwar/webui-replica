@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
+import { normalizeCitations } from '../lib/citations'
 import SourcesList from './SourcesList'
 import ToolCallsView from './ToolCallsView'
 import { CheckIcon, CopyIcon, PencilIcon, RefreshIcon, ThumbDownIcon, ThumbUpIcon } from './icons'
@@ -225,6 +226,8 @@ function MessageBubble({
     )
   }
 
+  // Assistant replies only: shown and copied with consistent [n] citations.
+  const text = normalizeCitations(content)
   const rate = (value: 1 | -1) => {
     const next = actions?.rating === value ? null : value
     actions?.onRate?.(next)
@@ -245,8 +248,8 @@ function MessageBubble({
       {toolCalls && toolCalls.length > 0 && <ToolCallsView calls={toolCalls} tools={toolInfo} />}
       {content ? (
         <div className={streaming ? 'streaming-cursor' : undefined}>
-          <Suspense fallback={<PlainText content={content} />}>
-            <Markdown content={content} />
+          <Suspense fallback={<PlainText content={text} />}>
+            <Markdown content={text} />
           </Suspense>
         </div>
       ) : (
@@ -263,7 +266,7 @@ function MessageBubble({
       {actions && (content || toolCalls?.length) && (
         <div className="flex flex-col gap-1">
           <div className="-ml-1.5 flex gap-0.5">
-            <CopyButton text={content} />
+            <CopyButton text={text} />
             {actions.onRegenerate && (
               <ActionButton
                 label="Regenerate"
