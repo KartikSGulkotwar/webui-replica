@@ -18,6 +18,7 @@ dependencies = [
     "pypdf>=5",
     "python-docx>=1.1",
     "python-multipart>=0.0.20",
+    "ddgs>=9.16",  # keyless web search (DuckDuckGo and other engines)
 ]
 
 [project.optional-dependencies]

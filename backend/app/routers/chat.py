@@ -2,13 +2,14 @@ import json
 import logging
 from collections.abc import AsyncIterator
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from app.app_settings import get_admin_settings
+from app.app_settings import usable_tools
 from app.auth import ActiveUserDep
 from app.catalog import resolve_model
 from app.db import SessionDep
@@ -16,6 +17,7 @@ from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
 from app.providers.base import BaseProvider, ProviderError, RefusalError
 from app.providers.registry import RegistryDep
 from app.rag.service import (
+    Source,
     attached_document_ids,
     build_context,
     collection_document_ids,
@@ -26,7 +28,9 @@ from app.rag.service import (
 from app.ratelimit import limit_chat
 from app.routers.conversations import get_conversation_or_404, list_messages
 from app.schemas import ChatMessage, ChatParams, ChatStreamRequest, ToolSpec
-from app.tools.registry import TOOLS, Tool, ToolContext, ToolOutcome, run_tool
+from app.tools.registry import Tool, ToolContext, ToolOutcome, run_tool
+from app.websearch.engines import SearchError, WebSearchConfig, search
+from app.websearch.service import make_search_query, web_search_config, web_sources
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +97,8 @@ async def stream_and_persist(
     sources: list[dict] | None = None,
     tools: list[Tool] | None = None,
     tool_context: ToolContext | None = None,
+    web_search: WebSearchConfig | None = None,
+    http: httpx.AsyncClient | None = None,
 ) -> AsyncIterator[str]:
     """Relay provider chunks as normalized SSE and save the assistant reply.
 
@@ -125,9 +131,46 @@ async def stream_and_persist(
         return save_assistant_message(engine, conversation_id, answered_by, content, sources, trace)
 
     messages = list(history)
+    sources = list(sources or [])
     try:
+        if web_search is not None and http is not None:
+            # Search before answering; shown as a step like a tool call.
+            query = await make_search_query(provider, model, messages)
+            step = {"id": "web_search", "name": "web_search", "arguments": {"query": query}}
+            yield sse({"tool_call": step})
+            question = next((m.content for m in reversed(messages) if m.role == "user"), "")
+            found: list[Source] = []
+            try:
+                results = await search(http, web_search, query)
+                found = await web_sources(http, results, question, first_n=len(sources) + 1)
+                pages = list(dict.fromkeys(s.url for s in found))
+                plural = "" if len(pages) == 1 else "s"
+                output = f"Read {len(pages)} page{plural}\n" + "\n".join(p or "" for p in pages)
+                error = False
+                if not found:
+                    output = "No results."
+            except SearchError as exc:
+                output, error = str(exc), True
+            trace.append({**step, "output": output, "error": error})
+            yield sse({"tool_result": {"id": step["id"], "output": output, "error": error}})
+            lead = next((i for i, m in enumerate(messages) if m.role != "system"), len(messages))
+            if found:
+                sources += sources_payload(found)
+                messages.insert(lead, ChatMessage(role="system", content=build_context(found)))
+            else:
+                messages.insert(
+                    lead,
+                    ChatMessage(
+                        role="system",
+                        content=(
+                            "A web search for this message found nothing usable"
+                            + (f" ({output})" if error else "")
+                            + ". Say so briefly, then answer from what you know."
+                        ),
+                    ),
+                )
         if sources:
-            # Sent first so the citations can be shown while the answer streams.
+            # Sent before the text so the citations can be shown while the answer streams.
             yield sse({"sources": sources})
         for round_number in range(MAX_TOOL_ROUNDS + 1):
             offered = specs if specs and round_number < MAX_TOOL_ROUNDS else None
@@ -300,10 +343,13 @@ async def chat_stream(
             history.insert(len(prompts), ChatMessage(role="system", content=build_context(found)))
 
     # Tools: what this turn asked for plus the custom model's defaults, limited
-    # to the ones an admin has enabled.
-    enabled = set(get_admin_settings(session, request.app.state.settings).enabled_tools)
+    # to the ones an admin has enabled (and that are set up).
+    settings, cipher = request.app.state.settings, request.app.state.cipher
     wanted = set(body.tools) | set(resolved.tool_ids)
-    tools = [t for t in TOOLS.values() if t.id in wanted and t.id in enabled]
+    tools = [t for t in usable_tools(session, settings, cipher) if t.id in wanted]
+    search_config = web_search_config(session, settings, cipher)
+    if body.web_search and not search_config.enabled:
+        raise HTTPException(status_code=400, detail="Web search isn't set up on this server")
 
     return StreamingResponse(
         stream_and_persist(
@@ -316,7 +362,9 @@ async def chat_stream(
             body.params,
             sources,
             tools,
-            ToolContext(http=request.app.state.http),
+            ToolContext(http=request.app.state.http, web_search=search_config),
+            search_config if body.web_search else None,
+            request.app.state.http,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

@@ -54,7 +54,12 @@ async def check_url(url: str) -> None:
             raise FetchError("That address is private or internal, so it can't be fetched")
 
 
-async def fetch_text(http: httpx.AsyncClient, url: str) -> tuple[str, str]:
+async def fetch_text(
+    http: httpx.AsyncClient,
+    url: str,
+    max_chars: int = MAX_CHARS,
+    timeout: httpx.Timeout = TIMEOUT,
+) -> tuple[str, str]:
     """Return (final URL, readable text), following redirects one checked hop at a time."""
     for _ in range(MAX_REDIRECTS + 1):
         await check_url(url)
@@ -63,7 +68,7 @@ async def fetch_text(http: httpx.AsyncClient, url: str) -> tuple[str, str]:
                 "GET",
                 url,
                 follow_redirects=False,
-                timeout=TIMEOUT,
+                timeout=timeout,
                 headers={
                     "User-Agent": USER_AGENT,
                     "Accept": "text/html,text/plain,application/json;q=0.9,*/*;q=0.5",
@@ -100,7 +105,7 @@ async def fetch_text(http: httpx.AsyncClient, url: str) -> tuple[str, str]:
             text = "".join(parser.parts)
         lines = [line.strip() for line in text.splitlines()]
         text = "\n".join(line for line in lines if line)
-        if len(text) > MAX_CHARS:
-            text = text[:MAX_CHARS] + "\n…(truncated)"
+        if len(text) > max_chars:
+            text = text[:max_chars] + "\n…(truncated)"
         return url, text
     raise FetchError("Too many redirects")

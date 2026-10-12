@@ -43,3 +43,14 @@ def save_admin_settings(session: Session, new: AdminSettings, settings: Settings
         session.add(row)
     session.commit()
     return new
+
+
+def usable_tools(session: Session, settings: Settings, cipher) -> list:
+    """Tools people can turn on now: enabled by an admin, and web search only
+    once a search engine is set up."""
+    from app.tools.registry import TOOLS
+    from app.websearch.service import web_search_config
+
+    enabled = get_admin_settings(session, settings).enabled_tools
+    search_ready = web_search_config(session, settings, cipher).enabled
+    return [t for t in TOOLS.values() if t.id in enabled and (t.id != "web_search" or search_ready)]

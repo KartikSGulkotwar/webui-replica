@@ -10,6 +10,7 @@ import Composer from '../components/Composer'
 import { MenuIcon, PlusIcon } from '../components/icons'
 import MessageBubble from '../components/MessageBubble'
 import ToolsButton from '../components/ToolsButton'
+import WebSearchButton from '../components/WebSearchButton'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatAttachments } from '../hooks/useChatAttachments'
@@ -38,6 +39,10 @@ export default function ChatPage() {
   const toolChoice = useSelectedTools()
   // Only tools that are still enabled are sent.
   const activeTools = toolChoice.selected.filter((t) => toolList.data?.some((i) => i.id === t))
+  // Web search is switched on per message, like Open WebUI (not remembered).
+  const [webSearchOn, setWebSearchOn] = useState(false)
+  const canSearch = !!config.data?.web_search
+  const runOptions = { tools: activeTools, webSearch: canSearch && webSearchOn }
   // System prompt chosen before the first message, when the chat doesn't exist yet.
   const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
   const attach = useChatAttachments(
@@ -206,10 +211,7 @@ export default function ChatPage() {
                         rate.mutate({ messageId: m.id, rating, comment }),
                       onRegenerate:
                         m.id === lastAssistantId && selected
-                          ? () =>
-                              run({ kind: 'regenerate' }, selected.id, undefined, {
-                                tools: activeTools,
-                              })
+                          ? () => run({ kind: 'regenerate' }, selected.id, undefined, runOptions)
                           : undefined,
                       busy: isStreaming || !selected,
                     }
@@ -220,9 +222,7 @@ export default function ChatPage() {
                               { kind: 'edit', messageId: m.id, content },
                               selected.id,
                               undefined,
-                              {
-                                tools: activeTools,
-                              },
+                              runOptions,
                             )
                         : undefined,
                       busy: isStreaming,
@@ -250,9 +250,7 @@ export default function ChatPage() {
           {canRetry && (
             <button
               type="button"
-              onClick={() =>
-                run({ kind: 'regenerate' }, selected!.id, undefined, { tools: activeTools })
-              }
+              onClick={() => run({ kind: 'regenerate' }, selected!.id, undefined, runOptions)}
               className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Get a reply
@@ -268,7 +266,7 @@ export default function ChatPage() {
             { kind: 'send', content: text },
             selected.id,
             id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
-            { tools: activeTools },
+            runOptions,
           )
           if (!id) setDraftSystemPrompt('')
         }}
@@ -285,6 +283,13 @@ export default function ChatPage() {
               onToggle={toolChoice.toggle}
               disabled={notFound}
             />
+            {canSearch && (
+              <WebSearchButton
+                on={webSearchOn}
+                onToggle={() => setWebSearchOn((v) => !v)}
+                disabled={notFound}
+              />
+            )}
           </>
         }
         disabled={!!disabledReason || notFound || attach.busy}

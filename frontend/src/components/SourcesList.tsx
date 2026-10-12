@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import type { Source } from '../types/api'
 
+function hostname(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 /** Numbered citations under a reply; click one to read the exact passage. */
 export default function SourcesList({ sources }: { sources: Source[] }) {
   const [open, setOpen] = useState<number | null>(null)
@@ -21,10 +29,11 @@ export default function SourcesList({ sources }: { sources: Source[] }) {
                 ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
                 : 'border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
             }`}
-            title={s.filename}
+            title={s.url ? `${s.filename}\n${s.url}` : s.filename}
           >
             <span className="font-semibold">[{s.n}]</span>
-            <span className="truncate">{s.filename}</span>
+            {s.url && <span aria-hidden="true">🌐</span>}
+            <span className="truncate">{s.url ? hostname(s.url) : s.filename}</span>
             {s.page != null && <span className="shrink-0">· p.{s.page}</span>}
           </button>
         ))}
@@ -34,6 +43,19 @@ export default function SourcesList({ sources }: { sources: Source[] }) {
           <p className="mb-1 text-xs font-medium text-zinc-500">
             [{current.n}] {current.filename}
             {current.page != null ? `, page ${current.page}` : ''}
+            {current.url && (
+              <>
+                {' · '}
+                <a
+                  href={current.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="break-all text-indigo-600 hover:underline dark:text-indigo-400"
+                >
+                  {current.url}
+                </a>
+              </>
+            )}
           </p>
           {current.text}
         </blockquote>

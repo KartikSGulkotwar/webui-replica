@@ -90,10 +90,28 @@ export interface ToolInfo {
 
 export interface Source {
   n: number
-  document_id: string
+  /** Null for a web page. */
+  document_id: string | null
+  /** File name, or a web page's title. */
   filename: string
   page: number | null
   text: string
+  url?: string | null
+}
+
+export type WebSearchEngine = '' | 'duckduckgo' | 'searxng' | 'brave' | 'tavily'
+
+export interface WebSearchSettings {
+  engine: WebSearchEngine
+  base_url: string
+  result_count: number
+  has_key: boolean
+}
+
+export interface WebSearchTestResult {
+  ok: boolean
+  error?: string
+  results: { title: string; url: string; snippet: string }[]
 }
 
 export interface Attachment {
@@ -185,6 +203,7 @@ export interface ChatStreamRequest {
   message?: string
   message_id?: number
   tools?: string[]
+  web_search?: boolean
 }
 
 export interface Provider {
@@ -226,6 +245,8 @@ export interface AppConfig {
   guest_access: boolean
   oauth_providers: string[]
   max_upload_mb: number
+  /** A search engine is set up, so chats can search the web. */
+  web_search?: boolean
 }
 
 export type UserRole = 'admin' | 'user' | 'pending'

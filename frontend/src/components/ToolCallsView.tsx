@@ -2,6 +2,11 @@ import { useState } from 'react'
 import { describeArgs } from '../lib/tools'
 import type { ToolInfo, ToolTrace } from '../types/api'
 
+// Steps the server runs itself (not from the tools menu) still need a label.
+const BUILT_IN: Record<string, Pick<ToolInfo, 'label' | 'emoji'>> = {
+  web_search: { label: 'Web search', emoji: '🔎' },
+}
+
 /** The tools a reply used, in order; click one to see its input and output. */
 export default function ToolCallsView({
   calls,
@@ -15,10 +20,12 @@ export default function ToolCallsView({
   return (
     <div className="space-y-1" aria-label="Tools used">
       {calls.map((c) => {
-        const info = tools?.find((t) => t.id === c.name)
+        const info = tools?.find((t) => t.id === c.name) ?? BUILT_IN[c.name]
         const running = c.output === undefined
         const input = describeArgs(c.arguments)
-        const short = !running && !c.error && c.output!.length <= 60 && !c.output!.includes('\n')
+        // A one-line result is shown in full; a longer one by its first line if that's short.
+        const firstLine = c.output?.split('\n')[0] ?? ''
+        const short = !running && !c.error && firstLine.length <= 60 ? firstLine : ''
         return (
           <div key={c.id} className="text-sm">
             <button
@@ -41,7 +48,7 @@ export default function ToolCallsView({
               ) : c.error ? (
                 <span>· failed</span>
               ) : short ? (
-                <span className="font-mono text-zinc-900 dark:text-zinc-100">→ {c.output}</span>
+                <span className="font-mono text-zinc-900 dark:text-zinc-100">→ {short}</span>
               ) : (
                 <span>· done</span>
               )}

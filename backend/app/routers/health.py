@@ -4,12 +4,13 @@ from fastapi import APIRouter, Request
 from sqlmodel import Session
 
 from app import __version__
-from app.app_settings import get_admin_settings
+from app.app_settings import get_admin_settings, usable_tools
 from app.auth import ActiveUserDep
 from app.oauth import configured_providers
 from app.routers.auth import has_real_users
 from app.schemas import AppConfig, ToolInfo
 from app.tools.registry import TOOLS
+from app.websearch.service import web_search_config
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -25,6 +26,7 @@ def config(request: Request) -> AppConfig:
     with Session(request.app.state.engine) as session:
         has_users = has_real_users(session)
         admin_settings = get_admin_settings(session, settings)
+        search = web_search_config(session, settings, request.app.state.cipher)
     return AppConfig(
         encryption_configured=request.app.state.cipher.configured,
         in_docker=Path("/.dockerenv").exists(),
@@ -35,6 +37,7 @@ def config(request: Request) -> AppConfig:
         guest_access=settings.guest_access,
         oauth_providers=list(configured_providers(settings)),
         max_upload_mb=settings.max_upload_mb,
+        web_search=search.enabled,
     )
 
 
@@ -45,10 +48,9 @@ def list_tools(request: Request, user: ActiveUserDep, all: bool = False) -> list
     Admins can pass ?all=true to list every built-in tool (for the settings page).
     """
     with Session(request.app.state.engine) as session:
-        enabled = get_admin_settings(session, request.app.state.settings).enabled_tools
-    show_all = all and user.role == "admin"
-    return [
-        ToolInfo(id=t.id, label=t.label, emoji=t.emoji, summary=t.summary)
-        for t in TOOLS.values()
-        if show_all or t.id in enabled
-    ]
+        tools = (
+            list(TOOLS.values())
+            if all and user.role == "admin"
+            else usable_tools(session, request.app.state.settings, request.app.state.cipher)
+        )
+    return [ToolInfo(id=t.id, label=t.label, emoji=t.emoji, summary=t.summary) for t in tools]

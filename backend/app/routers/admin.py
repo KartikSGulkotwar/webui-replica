@@ -1,3 +1,5 @@
+from dataclasses import asdict
+
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlmodel import col, delete, func, select
@@ -36,6 +38,15 @@ from app.schemas import (
     EmbeddingSettingsRead,
     EmbeddingSettingsUpdate,
     UserRead,
+    WebSearchSettingsRead,
+    WebSearchSettingsUpdate,
+    WebSearchTest,
+)
+from app.websearch.engines import ENGINES, NEEDS_KEY, NEEDS_URL, SearchError, search
+from app.websearch.service import (
+    load_web_search_settings,
+    save_web_search_settings,
+    web_search_config,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -192,6 +203,69 @@ async def reindex(request: Request, session: SessionDep, admin: AdminUserDep) ->
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"reindexed_chunks": count}
+
+
+# --- web search ---------------------------------------------------------------------
+
+
+def web_search_read(request: Request, session) -> WebSearchSettingsRead:
+    settings = request.app.state.settings
+    stored = load_web_search_settings(session, settings)
+    return WebSearchSettingsRead(
+        engine=stored.get("engine") or "",
+        base_url=stored.get("base_url") or "",
+        result_count=int(stored.get("result_count") or 3),
+        has_key=bool(stored.get("api_key_encrypted") or stored.get("env_api_key")),
+    )
+
+
+@router.get("/web-search", response_model=WebSearchSettingsRead)
+def read_web_search(
+    request: Request, session: SessionDep, admin: AdminUserDep
+) -> WebSearchSettingsRead:
+    return web_search_read(request, session)
+
+
+@router.put("/web-search", response_model=WebSearchSettingsRead)
+def write_web_search(
+    body: WebSearchSettingsUpdate, request: Request, session: SessionDep, admin: AdminUserDep
+) -> WebSearchSettingsRead:
+    stored = load_web_search_settings(session, request.app.state.settings)
+    values = {
+        "engine": body.engine,
+        "base_url": body.base_url.strip().rstrip("/"),
+        "result_count": body.result_count,
+        "api_key_encrypted": stored.get("api_key_encrypted"),
+        "env_api_key": stored.get("env_api_key", False),
+    }
+    if body.engine in NEEDS_URL and not values["base_url"]:
+        raise HTTPException(status_code=422, detail="SearXNG needs its base URL")
+    if body.api_key is not None:
+        key = body.api_key.strip()
+        try:
+            values["api_key_encrypted"] = request.app.state.cipher.encrypt(key) if key else None
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        values["env_api_key"] = False
+    if body.engine in NEEDS_KEY and not (values["api_key_encrypted"] or values["env_api_key"]):
+        raise HTTPException(status_code=422, detail=f"{ENGINES[body.engine]} needs an API key")
+    save_web_search_settings(session, values)
+    return web_search_read(request, session)
+
+
+@router.post("/web-search/test")
+async def test_web_search(
+    body: WebSearchTest, request: Request, session: SessionDep, admin: AdminUserDep
+) -> dict:
+    """Run a search with the saved settings and return the results."""
+    config = web_search_config(session, request.app.state.settings, request.app.state.cipher)
+    if not config.enabled:
+        raise HTTPException(status_code=400, detail="Web search isn't set up")
+    try:
+        results = await search(request.app.state.http, config, body.query)
+    except SearchError as exc:
+        return {"ok": False, "error": str(exc), "results": []}
+    return {"ok": True, "results": [asdict(r) for r in results]}
 
 
 # --- models (visibility and names) ----------------------------------------------------

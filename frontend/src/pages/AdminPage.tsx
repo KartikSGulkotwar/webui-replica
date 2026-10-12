@@ -4,6 +4,7 @@ import DocumentsPanel from '../components/admin/DocumentsPanel'
 import GeneralPanel from '../components/admin/GeneralPanel'
 import ModelsPanel from '../components/admin/ModelsPanel'
 import UsersPanel from '../components/admin/UsersPanel'
+import WebSearchPanel from '../components/admin/WebSearchPanel'
 import PageHeader from '../components/PageHeader'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -12,6 +13,7 @@ const TABS = [
   { id: 'connections', label: 'Connections', Panel: ConnectionsPanel },
   { id: 'models', label: 'Models', Panel: ModelsPanel },
   { id: 'documents', label: 'Documents', Panel: DocumentsPanel },
+  { id: 'web-search', label: 'Web search', Panel: WebSearchPanel },
   { id: 'general', label: 'General', Panel: GeneralPanel },
 ] as const
 

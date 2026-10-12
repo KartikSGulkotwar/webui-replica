@@ -49,7 +49,12 @@ class Settings(BaseSettings):
     rag_embedding_api_key: str = ""
 
     # Tools the model may call (comma-separated); admins change this at runtime.
-    enabled_tools: str = "calculator,current_time,fetch_url"
+    enabled_tools: str = "calculator,current_time,fetch_url,web_search"
+    # Web search: duckduckgo (no key), searxng (base URL), brave or tavily (API key); blank = off.
+    web_search_engine: str = ""
+    web_search_base_url: str = ""
+    web_search_api_key: str = ""
+    web_search_result_count: int = 3
 
     # Model preselected for visitors who haven't picked one, e.g. "groq:openai/gpt-oss-120b".
     default_model: str = ""

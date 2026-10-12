@@ -10,6 +10,8 @@ import httpx
 
 from app.tools.calculator import CalculatorError, calculate
 from app.tools.web import FetchError, fetch_text
+from app.websearch.engines import SearchError, WebSearchConfig, search
+from app.websearch.service import results_text
 
 MAX_OUTPUT_CHARS = 8_000
 
@@ -21,6 +23,7 @@ class ToolInputError(ValueError):
 @dataclass(frozen=True)
 class ToolContext:
     http: httpx.AsyncClient
+    web_search: WebSearchConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,17 @@ async def _fetch_url(args: dict[str, Any], ctx: ToolContext) -> str:
     except FetchError as exc:
         raise ToolInputError(str(exc)) from exc
     return f"Content of {final_url}:\n\n{text or '(the page has no readable text)'}"
+
+
+async def _web_search(args: dict[str, Any], ctx: ToolContext) -> str:
+    query = _string_arg(args, "query", max_len=400) or ""
+    if ctx.web_search is None or not ctx.web_search.enabled:
+        raise ToolInputError("Web search isn't set up on this server")
+    try:
+        results = await search(ctx.http, ctx.web_search, query, count=5)
+    except SearchError as exc:
+        raise ToolInputError(str(exc)) from exc
+    return results_text(results)
 
 
 TOOLS: dict[str, Tool] = {
@@ -139,6 +153,24 @@ TOOLS: dict[str, Tool] = {
                 "additionalProperties": False,
             },
             run=_fetch_url,
+        ),
+        Tool(
+            id="web_search",
+            label="Web search",
+            emoji="🔎",
+            description=(
+                "Search the web. Returns the top results with title, URL and a snippet. Use it "
+                "for recent events or facts you aren't sure of; read a result in full with "
+                "fetch_url if it's available. Cite the URLs you use."
+            ),
+            summary="Search the internet for current information",
+            parameters={
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Search terms"}},
+                "required": ["query"],
+                "additionalProperties": False,
+            },
+            run=_web_search,
         ),
     )
 }

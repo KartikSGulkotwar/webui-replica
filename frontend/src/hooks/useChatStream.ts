@@ -51,6 +51,8 @@ export interface NewChatOptions {
 export interface RunOptions {
   /** Tools the model may call for this message. */
   tools?: string[]
+  /** Search the web before answering. */
+  webSearch?: boolean
 }
 
 /** How many server messages there will be once this exchange is saved. */
@@ -160,6 +162,7 @@ export function useChatStream(conversationId: string | undefined) {
 
       const body: ChatStreamRequest = { conversation_id: id, model_id: modelId }
       if (options.tools?.length) body.tools = options.tools
+      if (options.webSearch) body.web_search = true
       if (action.kind === 'send') body.message = action.content
       if (action.kind === 'regenerate') body.action = 'regenerate'
       if (action.kind === 'edit') {

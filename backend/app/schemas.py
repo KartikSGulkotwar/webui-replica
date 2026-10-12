@@ -140,10 +140,11 @@ class MessageRead(BaseModel):
 
 class SourceRead(BaseModel):
     n: int
-    document_id: str
+    document_id: str | None
     filename: str
     page: int | None
     text: str
+    url: str | None = None
 
 
 class ToolTraceRead(BaseModel):
@@ -211,6 +212,8 @@ class ChatStreamRequest(BaseModel):
     message_id: int | None = None
     # Tool IDs the model may call this turn (custom models add their own).
     tools: list[str] = Field(default_factory=list, max_length=20)
+    # Search the web before answering and cite the pages.
+    web_search: bool = False
     params: ChatParams = Field(default_factory=ChatParams)
 
     @model_validator(mode="after")
@@ -300,6 +303,8 @@ class AppConfig(BaseModel):
     guest_access: bool
     oauth_providers: list[str]
     max_upload_mb: int
+    # A search engine is set up, so chats can search the web.
+    web_search: bool = False
 
 
 # --- accounts -----------------------------------------------------------------
@@ -414,6 +419,25 @@ class EmbeddingSettingsUpdate(BaseModel):
     model: str = Field(default="", max_length=200)
     # Omit/null to keep the stored key, "" to remove it.
     api_key: str | None = Field(default=None, max_length=1000)
+
+
+class WebSearchSettingsRead(BaseModel):
+    engine: Literal["", "duckduckgo", "searxng", "brave", "tavily"]
+    base_url: str
+    result_count: int
+    has_key: bool
+
+
+class WebSearchSettingsUpdate(BaseModel):
+    engine: Literal["", "duckduckgo", "searxng", "brave", "tavily"]
+    base_url: str = Field(default="", max_length=500)
+    result_count: int = Field(default=3, ge=1, le=10)
+    # Omit/null to keep the stored key, "" to remove it.
+    api_key: str | None = Field(default=None, max_length=1000)
+
+
+class WebSearchTest(BaseModel):
+    query: str = Field(default="Open WebUI", min_length=1, max_length=200)
 
 
 # --- model management ----------------------------------------------------------------
