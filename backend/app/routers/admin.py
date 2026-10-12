@@ -1,12 +1,37 @@
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response, status
-from sqlmodel import col, delete, select
+from sqlmodel import col, delete, func, select
 
 from app.app_settings import get_admin_settings, save_admin_settings
 from app.auth import AdminUserDep
 from app.db import SessionDep
-from app.models import Conversation, Message, OAuthAccount, SharedChat, User
+from app.models import (
+    Conversation,
+    ConversationAttachment,
+    Document,
+    DocumentChunk,
+    KnowledgeCollection,
+    Message,
+    OAuthAccount,
+    SharedChat,
+    User,
+)
+from app.providers.base import ProviderError
+from app.rag.embed import embed
+from app.rag.service import (
+    embedding_config,
+    load_embedding_settings,
+    reindex_all,
+    save_embedding_settings,
+)
 from app.routers.auth import to_read
-from app.schemas import AdminSettings, AdminUserUpdate, UserRead
+from app.schemas import (
+    AdminSettings,
+    AdminUserUpdate,
+    EmbeddingSettingsRead,
+    EmbeddingSettingsUpdate,
+    UserRead,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -47,6 +72,15 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     # Explicit deletes: SQLite doesn't enforce ON DELETE CASCADE by default.
     session.exec(delete(Message).where(col(Message.conversation_id).in_(conversation_ids)))
     session.exec(delete(SharedChat).where(col(SharedChat.conversation_id).in_(conversation_ids)))
+    session.exec(
+        delete(ConversationAttachment).where(
+            col(ConversationAttachment.conversation_id).in_(conversation_ids)
+        )
+    )
+    document_ids = select(Document.id).where(Document.owner_id == user.id)
+    session.exec(delete(DocumentChunk).where(col(DocumentChunk.document_id).in_(document_ids)))
+    session.exec(delete(Document).where(Document.owner_id == user.id))
+    session.exec(delete(KnowledgeCollection).where(KnowledgeCollection.owner_id == user.id))
     session.exec(delete(Conversation).where(Conversation.owner_id == user.id))
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     session.delete(user)
@@ -62,3 +96,88 @@ def read_settings(request: Request, session: SessionDep, admin: AdminUserDep) ->
 @router.put("/settings", response_model=AdminSettings)
 def write_settings(body: AdminSettings, session: SessionDep, admin: AdminUserDep) -> AdminSettings:
     return save_admin_settings(session, body)
+
+
+# --- documents / embeddings -----------------------------------------------------
+
+
+def embedding_read(request: Request, session) -> EmbeddingSettingsRead:
+    settings = request.app.state.settings
+    stored = load_embedding_settings(session, settings)
+    config = embedding_config(session, settings, request.app.state.cipher)
+    total = session.exec(select(func.count()).select_from(DocumentChunk)).one()
+    embedded = (
+        session.exec(
+            select(func.count())
+            .select_from(DocumentChunk)
+            .where(DocumentChunk.embedding_model == config.key)
+        ).one()
+        if config.enabled
+        else 0
+    )
+    return EmbeddingSettingsRead(
+        engine=config.engine if config.engine in ("ollama", "openai") else "",
+        base_url=config.base_url,
+        model=config.model,
+        has_key=bool(stored.get("api_key_encrypted") or stored.get("env_api_key")),
+        embedded_chunks=embedded,
+        total_chunks=total,
+    )
+
+
+@router.get("/embeddings", response_model=EmbeddingSettingsRead)
+def read_embeddings(
+    request: Request, session: SessionDep, admin: AdminUserDep
+) -> EmbeddingSettingsRead:
+    return embedding_read(request, session)
+
+
+@router.put("/embeddings", response_model=EmbeddingSettingsRead)
+def write_embeddings(
+    body: EmbeddingSettingsUpdate, request: Request, session: SessionDep, admin: AdminUserDep
+) -> EmbeddingSettingsRead:
+    settings = request.app.state.settings
+    stored = load_embedding_settings(session, settings)
+    values = {
+        "engine": body.engine,
+        "base_url": body.base_url.strip().rstrip("/"),
+        "model": body.model.strip(),
+        "api_key_encrypted": stored.get("api_key_encrypted"),
+        "env_api_key": stored.get("env_api_key", False),
+    }
+    if body.engine and (not values["base_url"] or not values["model"]):
+        raise HTTPException(status_code=422, detail="Base URL and model are required")
+    if body.api_key is not None:
+        key = body.api_key.strip()
+        try:
+            values["api_key_encrypted"] = request.app.state.cipher.encrypt(key) if key else None
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        values["env_api_key"] = False
+    save_embedding_settings(session, values)
+    return embedding_read(request, session)
+
+
+@router.post("/embeddings/test")
+async def test_embeddings(request: Request, session: SessionDep, admin: AdminUserDep) -> dict:
+    """Embed a short text with the saved settings and report the vector size."""
+    config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
+    if not config.enabled:
+        raise HTTPException(status_code=400, detail="No embedding model is configured")
+    http: httpx.AsyncClient = request.app.state.http
+    try:
+        [vector] = await embed(http, config, ["Hello, world"])
+    except ProviderError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": True, "dimensions": len(vector)}
+
+
+@router.post("/embeddings/reindex")
+async def reindex(request: Request, session: SessionDep, admin: AdminUserDep) -> dict:
+    """Re-embed every document chunk with the current model (after changing it)."""
+    config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
+    try:
+        count = await reindex_all(session, request.app.state.http, config)
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"reindexed_chunks": count}

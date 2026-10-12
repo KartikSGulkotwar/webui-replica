@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { SendIcon, StopIcon } from './icons'
 
 interface Props {
@@ -9,6 +16,10 @@ interface Props {
   disabledReason?: string
   /** Text to put back after a message was rejected before it was saved. */
   restoreText?: string
+  /** Shown above the input (e.g. attached documents). */
+  above?: ReactNode
+  /** Buttons left of the input (e.g. attach). */
+  leading?: ReactNode
 }
 
 export default function Composer({
@@ -18,6 +29,8 @@ export default function Composer({
   disabled,
   disabledReason,
   restoreText,
+  above,
+  leading,
 }: Props) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -52,7 +65,9 @@ export default function Composer({
 
   return (
     <form onSubmit={submit} className="mx-auto w-full max-w-3xl px-3 pb-3 sm:px-4 sm:pb-4">
+      {above}
       <div className="flex items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm focus-within:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-600">
+        {leading}
         <textarea
           ref={ref}
           value={text}

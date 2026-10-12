@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Rating, Role } from '../types/api'
+import type { Rating, Role, Source } from '../types/api'
+import SourcesList from './SourcesList'
 import { CheckIcon, CopyIcon, PencilIcon, RefreshIcon, ThumbDownIcon, ThumbUpIcon } from './icons'
 
 // Markdown + syntax highlighting is most of the bundle; load it after first paint.
@@ -26,6 +27,8 @@ interface Props {
   /** For assistant messages: which model wrote it. */
   model?: { name: string; provider: string }
   streaming?: boolean
+  /** Document passages the reply cites as [1], [2]… */
+  sources?: Source[] | null
   /** Omit for read-only views (shared chats, in-flight messages). */
   actions?: MessageActions
 }
@@ -171,7 +174,7 @@ function FeedbackComment({ onSubmit }: { onSubmit: (comment: string) => void }) 
   )
 }
 
-function MessageBubble({ role, content, model, streaming, actions }: Props) {
+function MessageBubble({ role, content, model, streaming, sources, actions }: Props) {
   const [editing, setEditing] = useState(false)
   const [askComment, setAskComment] = useState(false)
 
@@ -241,6 +244,7 @@ function MessageBubble({ role, content, model, streaming, actions }: Props) {
           </div>
         )
       )}
+      {sources && sources.length > 0 && <SourcesList sources={sources} />}
       {actions && content && (
         <div className="flex flex-col gap-1">
           <div className="-ml-1.5 flex gap-0.5">

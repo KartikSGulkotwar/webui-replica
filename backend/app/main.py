@@ -12,7 +12,17 @@ from app.crypto import KeyCipher
 from app.db import BACKEND_DIR, make_engine, run_migrations
 from app.providers.registry import ProviderRegistry
 from app.ratelimit import RateLimiter
-from app.routers import admin, auth, chat, conversations, health, models, providers, shared
+from app.routers import (
+    admin,
+    auth,
+    chat,
+    conversations,
+    health,
+    knowledge,
+    models,
+    providers,
+    shared,
+)
 from app.seed import seed_admin, seed_providers
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -69,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(conversations.router)
     app.include_router(chat.router)
     app.include_router(shared.router)
+    app.include_router(knowledge.router)
 
     # On Vercel the build step puts the compiled frontend here and the app serves
     # it (Vercel moves it to its CDN). Docker and local dev use nginx/Vite instead.

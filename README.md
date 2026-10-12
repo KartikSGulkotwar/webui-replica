@@ -19,6 +19,8 @@ A self-hosted AI chat app that talks to **Ollama**, **Anthropic's Claude** (nati
 - **Conversation history.** Chats are saved and grouped by date, with auto-titles, inline rename, and delete.
 - **Provider settings in the browser.** Add, edit, enable/disable, and delete providers, and test a connection before saving. Presets cover common services.
 - **Encrypted API keys.** Keys are encrypted at rest and never sent back to the browser.
+- **Chat with your documents (RAG).** Upload PDF, Word, Markdown, text, CSV, JSON or HTML into reusable knowledge bases, or attach files to a single chat. Answers cite numbered sources with file name and page, and you can expand each citation to read the exact passage.
+- **Hybrid search.** Keyword ranking (BM25) always runs. Add an embedding model (Ollama or any `/embeddings` API) and semantic vector search joins in, merged with Reciprocal Rank Fusion. Vectors live in Postgres via **pgvector**.
 - **Native Claude support.** Uses the official Anthropic SDK, so the system prompt, per-model output limits, and prompt caching work as Claude intends. If a model declines a request, server-side fallback can answer with another Claude model, and the reply is labelled with the model that actually answered.
 - **Accounts and roles.** Email/password sign-up (Argon2-hashed), optional "Sign in with GitHub/Google", and admin / user / pending roles. The first account becomes admin. Each user's chats are private.
 - **Admin panel.** Approve or remove users, change roles, turn sign-up on or off, and manage providers.
@@ -43,7 +45,10 @@ flowchart LR
         REG --> OL
         REG --> OA
     end
-    DB[("Postgres / SQLite<br/>conversations · messages<br/>providers (encrypted keys)")]
+    RAG["RAG: extract → chunk → embed<br/>BM25 + pgvector, RRF"]
+    R --> RAG
+    RAG --> DB
+    DB[("Postgres + pgvector / SQLite<br/>conversations · messages · documents<br/>providers (encrypted keys)")]
     UI -- "REST + SSE (/api)" --> R
     R --> DB
     REG --> AN["AnthropicProvider<br/>official SDK"]
@@ -122,6 +127,8 @@ Backend environment variables (see [`backend/.env.example`](backend/.env.example
 | `GUEST_ACCESS` | `false` | Shows "Continue as guest" (a throwaway account per visitor) |
 | `GITHUB_CLIENT_ID`/`_SECRET`, `GOOGLE_CLIENT_ID`/`_SECRET`, `PUBLIC_URL` | — | Sign in with GitHub/Google. Register `<PUBLIC_URL>/api/auth/oauth/<provider>/callback` |
 | `AUTH_RATE_LIMIT_PER_MINUTE` | `10` | Sign-up/login/guest attempts per minute per IP |
+| `MAX_UPLOAD_MB` | `10` | Largest document upload (use `4` on Vercel, which caps request bodies at 4.5 MB) |
+| `RAG_EMBEDDING_ENGINE`, `RAG_EMBEDDING_BASE_URL`, `RAG_EMBEDDING_MODEL`, `RAG_EMBEDDING_API_KEY` | — | Initial semantic-search settings: engine `ollama` or `openai` (any `/embeddings` API); blank means keyword search only. Admins can change them under Admin panel → Documents |
 | `DEFAULT_MODEL` | — | Model new visitors start with, e.g. `groq:openai/gpt-oss-120b` |
 | `CHAT_RATE_LIMIT_PER_MINUTE` | `20` | Messages per minute per client IP. `0` disables the limit |
 | `TRUSTED_PROXY_HOPS` | `0` | Number of proxies whose `X-Forwarded-For` entries are trusted (1 behind nginx or Vercel) |
@@ -140,6 +147,8 @@ The Docker images also run on any container host (Render, Railway, Fly.io). Set 
 - **One normalized stream.** The browser only ever receives `data: {"delta": …}`, then `{"done": true, "usage": …}` or `{"error": …}`. The user's message is saved before the model is called. The reply is saved however the stream ends — when it finishes, when the provider fails, or when the user presses Stop — so partial answers survive a refresh.
 - **Encrypted keys.** API keys are encrypted with Fernet before they're stored. The API only reports `has_key`. If a stored key can't be decrypted, only that provider shows as broken; the rest keep working.
 - **Registry that follows the database.** Each request re-reads the enabled providers and rebuilds only the ones whose settings changed, so edits made in Settings apply immediately.
+- **Retrieval that degrades gracefully.** Keyword search needs no model, so documents are always searchable. If embedding a document fails, it's still indexed for keywords, with a visible note. If embedding a question fails, the search falls back to keywords. Each chunk records which embedding model produced it, so vectors from different models are never compared, and a re-index button re-embeds everything after a model change.
+- **Citations people can check.** Chunks never span pages, so every source points at one page. The passages are sent to the model with numbered tags and an instruction to cite them, and the same passages are saved with the reply, so the citations still match after a refresh. Weak matches are cut relative to the best one (BM25 under 40% of the top score; vectors more than 0.10 cosine below the best), so answers don't cite every loosely related file.
 - **Refusals are not answers.** When Claude declines, the partial text is discarded rather than saved, and the user sees why. On Anthropic's API the newest models opt into server-side fallback (`fallbacks: "default"`), so most declines are answered by another Claude model on the same stream.
 - **Accounts without a session store.** A signed JWT in an HttpOnly, SameSite=Lax cookie identifies the user, so any serverless instance can verify it without shared memory. The token carries a per-user `session_version`: changing a password bumps it and signs out every other device. Roles are read from the database on each request, so approving, demoting, or deleting a user takes effect immediately. Login uses the same error and timing for unknown emails as for wrong passwords, so it doesn't reveal which accounts exist.
 - **Admin-only provider settings.** Provider URLs and keys, and the connection-test endpoint (which makes the server call a URL), are restricted to admins. Other users only see the model list.

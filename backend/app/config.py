@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     # Sign-up/login/guest attempts per minute per client IP.
     auth_rate_limit_per_minute: int = 10
 
+    # --- documents (RAG) ------------------------------------------------------
+    # Upload size limit. Vercel caps request bodies at 4.5 MB, so use 4 there.
+    max_upload_mb: int = 10
+    # Initial embedding settings; admins change them in the admin panel.
+    # Engine "" means keyword (BM25) search only.
+    rag_embedding_engine: str = ""
+    rag_embedding_base_url: str = ""
+    rag_embedding_model: str = ""
+    rag_embedding_api_key: str = ""
+
     # Model preselected for visitors who haven't picked one, e.g. "groq:openai/gpt-oss-120b".
     default_model: str = ""
     # Messages per minute per client IP on /api/chat/stream; 0 disables.

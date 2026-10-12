@@ -12,6 +12,7 @@ const conv: ConversationDetail = {
   updated_at: '',
   system_prompt: 'Be brief',
   share_id: null,
+  attachments: [],
   messages: [
     { id: 1, role: 'user', content: 'Is 7 prime?', model_id: null, created_at: '' },
     { id: 2, role: 'assistant', content: 'Yes.', model_id: 'groq:llama', created_at: '' },

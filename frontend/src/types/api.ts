@@ -58,12 +58,69 @@ export interface Message {
   model_id: string | null
   rating?: Rating | null
   rating_comment?: string | null
+  /** Document passages the reply was grounded in. */
+  sources?: Source[] | null
   created_at: string
+}
+
+export interface Source {
+  n: number
+  document_id: string
+  filename: string
+  page: number | null
+  text: string
+}
+
+export interface Attachment {
+  kind: 'collection' | 'document'
+  id: string
+  name: string
+}
+
+export interface AttachmentRefs {
+  collection_ids: string[]
+  document_ids: string[]
+}
+
+export interface KnowledgeDocument {
+  id: string
+  collection_id: string | null
+  filename: string
+  size_bytes: number
+  page_count: number | null
+  chunk_count: number
+  warning: string | null
+  created_at: string
+}
+
+export interface Collection {
+  id: string
+  name: string
+  description: string
+  document_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface CollectionDetail extends Collection {
+  documents: KnowledgeDocument[]
+}
+
+export type EmbeddingEngine = '' | 'ollama' | 'openai'
+
+export interface EmbeddingSettings {
+  engine: EmbeddingEngine
+  base_url: string
+  model: string
+  has_key: boolean
+  embedded_chunks: number
+  total_chunks: number
 }
 
 export interface ConversationDetail extends Conversation {
   system_prompt: string | null
   share_id: string | null
+  attachments: Attachment[]
   messages: Message[]
 }
 
@@ -86,6 +143,8 @@ export interface Usage {
 }
 
 export type StreamEvent =
+  /** Sent first when the reply draws on documents. */
+  | { sources: Source[] }
   | { delta: string }
   /** model_id is set when a different model answered (refusal fallback). */
   | { done: true; usage: Usage | null; message_id: number | null; model_id?: string }
@@ -138,6 +197,7 @@ export interface AppConfig {
   signup_enabled: boolean
   guest_access: boolean
   oauth_providers: string[]
+  max_upload_mb: number
 }
 
 export type UserRole = 'admin' | 'user' | 'pending'

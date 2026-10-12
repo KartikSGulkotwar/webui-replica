@@ -59,9 +59,15 @@ class ModelsResponse(BaseModel):
 # --- conversations ---------------------------------------------------------
 
 
+class AttachmentRefs(BaseModel):
+    collection_ids: list[str] = Field(default_factory=list, max_length=20)
+    document_ids: list[str] = Field(default_factory=list, max_length=50)
+
+
 class ConversationCreate(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     system_prompt: str | None = Field(default=None, max_length=10_000)
+    attachments: AttachmentRefs | None = None
 
 
 class ConversationUpdate(BaseModel):
@@ -92,12 +98,28 @@ class MessageRead(BaseModel):
     model_id: str | None
     rating: Literal[1, -1] | None = None
     rating_comment: str | None = None
+    sources: list["SourceRead"] | None = None
     created_at: datetime
+
+
+class SourceRead(BaseModel):
+    n: int
+    document_id: str
+    filename: str
+    page: int | None
+    text: str
+
+
+class AttachmentRead(BaseModel):
+    kind: Literal["collection", "document"]
+    id: str
+    name: str
 
 
 class ConversationDetail(ConversationRead):
     system_prompt: str | None
     share_id: str | None = None
+    attachments: list[AttachmentRead] = Field(default_factory=list)
     messages: list[MessageRead]
 
 
@@ -224,6 +246,7 @@ class AppConfig(BaseModel):
     signup_enabled: bool
     guest_access: bool
     oauth_providers: list[str]
+    max_upload_mb: int
 
 
 # --- accounts -----------------------------------------------------------------
@@ -281,3 +304,58 @@ class AdminUserUpdate(BaseModel):
 class AdminSettings(BaseModel):
     enable_signup: bool
     default_user_role: Literal["user", "pending"]
+
+
+# --- knowledge (RAG) ---------------------------------------------------------------
+
+
+class CollectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=500)
+
+
+class CollectionUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class DocumentRead(BaseModel):
+    id: str
+    collection_id: str | None
+    filename: str
+    size_bytes: int
+    page_count: int | None
+    chunk_count: int
+    warning: str | None
+    created_at: datetime
+
+
+class CollectionRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    document_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CollectionDetail(CollectionRead):
+    documents: list[DocumentRead]
+
+
+class EmbeddingSettingsRead(BaseModel):
+    engine: Literal["", "ollama", "openai"]
+    base_url: str
+    model: str
+    has_key: bool
+    # Chunks embedded with the current model vs. all chunks (for re-index hints).
+    embedded_chunks: int
+    total_chunks: int
+
+
+class EmbeddingSettingsUpdate(BaseModel):
+    engine: Literal["", "ollama", "openai"]
+    base_url: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=200)
+    # Omit/null to keep the stored key, "" to remove it.
+    api_key: str | None = Field(default=None, max_length=1000)

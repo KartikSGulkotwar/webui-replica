@@ -32,4 +32,5 @@ def config(request: Request) -> AppConfig:
         signup_enabled=admin_settings.enable_signup or not has_users,
         guest_access=settings.guest_access,
         oauth_providers=list(configured_providers(settings)),
+        max_upload_mb=settings.max_upload_mb,
     )

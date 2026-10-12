@@ -120,3 +120,20 @@ async def test_stream_chat_truncated(provider: OllamaProvider) -> None:
     with pytest.raises(ProviderError, match="ended unexpectedly"):
         async for _ in provider.stream_chat("m", [], ChatParams()):
             pass
+
+
+@respx.mock
+async def test_list_models_hides_embedding_models(provider: OllamaProvider) -> None:
+    respx.get(f"{BASE}/api/tags").respond(
+        json={
+            "models": [
+                {"name": "qwen2.5:0.5b", "details": {"family": "qwen2"}},
+                {"name": "nomic-embed-text:latest", "details": {"family": "nomic-bert"}},
+                {"name": "mxbai-embed-large:latest", "details": {"family": "bert"}},
+                {"name": "all-minilm:latest", "details": {"family": "bert"}},
+                {"name": "custom-embedder", "details": {"families": ["bert"]}},
+                {"name": "llama3.2:1b", "details": {"family": "llama"}},
+            ]
+        }
+    )
+    assert [m.name for m in await provider.list_models()] == ["llama3.2:1b", "qwen2.5:0.5b"]

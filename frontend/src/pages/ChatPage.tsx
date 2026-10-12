@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import { rateMessage } from '../api/conversations'
+import { AttachButton, AttachmentChips } from '../components/ChatAttachments'
 import ChatMenu from '../components/ChatMenu'
 import ChatWindow from '../components/ChatWindow'
 import Composer from '../components/Composer'
@@ -10,6 +11,7 @@ import { MenuIcon, PlusIcon } from '../components/icons'
 import MessageBubble from '../components/MessageBubble'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
+import { useChatAttachments } from '../hooks/useChatAttachments'
 import { expectedCount, useChatStream } from '../hooks/useChatStream'
 import { useMe } from '../hooks/useAuth'
 import { conversationKey, useConversation } from '../hooks/useConversation'
@@ -32,6 +34,10 @@ export default function ChatPage() {
   const queryClient = useQueryClient()
   // System prompt chosen before the first message, when the chat doesn't exist yet.
   const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
+  const attach = useChatAttachments(
+    id ? conversation.data : undefined,
+    config.data?.max_upload_mb ?? 10,
+  )
   const labelFor = useCallback(
     (modelId: string) => {
       const l = modelLabel(modelId, models)
@@ -174,6 +180,7 @@ export default function ChatPage() {
               model={
                 m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined
               }
+              sources={m.sources}
               actions={
                 m.role === 'assistant'
                   ? {
@@ -202,6 +209,7 @@ export default function ChatPage() {
               content={p.text}
               model={modelLabel(p.modelId, models)}
               streaming={p.status === 'streaming'}
+              sources={p.sources}
             />
           )}
           {pendingError && (
@@ -224,13 +232,19 @@ export default function ChatPage() {
       <Composer
         onSend={(text) => {
           if (!selected) return
-          run({ kind: 'send', content: text }, selected.id, id ? undefined : draftSystemPrompt)
+          run(
+            { kind: 'send', content: text },
+            selected.id,
+            id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
+          )
           if (!id) setDraftSystemPrompt('')
         }}
         onStop={stop}
         restoreText={p?.notSent ? p.userContent : undefined}
         isStreaming={isStreaming}
-        disabled={!!disabledReason || notFound}
+        above={<AttachmentChips controls={attach} />}
+        leading={<AttachButton controls={attach} disabled={notFound} />}
+        disabled={!!disabledReason || notFound || attach.busy}
         disabledReason={disabledReason}
       />
     </div>

@@ -6,8 +6,20 @@ from sqlmodel import Session, col, delete, func, or_, select
 
 from app.auth import ActiveUserDep
 from app.db import SessionDep
-from app.models import DEFAULT_TITLE, Conversation, Message, SharedChat, User, utcnow
+from app.models import (
+    DEFAULT_TITLE,
+    Conversation,
+    ConversationAttachment,
+    Document,
+    KnowledgeCollection,
+    Message,
+    SharedChat,
+    User,
+    utcnow,
+)
 from app.schemas import (
+    AttachmentRead,
+    AttachmentRefs,
     ConversationCreate,
     ConversationDetail,
     ConversationRead,
@@ -53,16 +65,75 @@ def to_read(conversation: Conversation, shared: bool, snippet: str | None = None
     )
 
 
+def message_read(m: Message) -> MessageRead:
+    return MessageRead(
+        **m.model_dump(exclude={"sources_json", "conversation_id"}),
+        sources=json.loads(m.sources_json) if m.sources_json else None,
+    )
+
+
+def list_attachments(session: Session, conversation: Conversation) -> list[AttachmentRead]:
+    refs = session.exec(
+        select(ConversationAttachment).where(
+            ConversationAttachment.conversation_id == conversation.id
+        )
+    ).all()
+    out: list[AttachmentRead] = []
+    for r in refs:
+        target = session.get(KnowledgeCollection if r.kind == "collection" else Document, r.ref_id)
+        if target is not None and target.owner_id == conversation.owner_id:
+            name = target.name if r.kind == "collection" else target.filename
+            out.append(AttachmentRead(kind=r.kind, id=r.ref_id, name=name))
+    return sorted(out, key=lambda a: (a.kind, a.name.lower()))
+
+
+def set_attachments(
+    session: Session, conversation: Conversation, refs: AttachmentRefs, user: User
+) -> None:
+    """Replace the chat's attachments, keeping only the user's own documents."""
+    owned_collections = set(
+        session.exec(
+            select(KnowledgeCollection.id).where(
+                col(KnowledgeCollection.id).in_(refs.collection_ids),
+                KnowledgeCollection.owner_id == user.id,
+            )
+        )
+    )
+    owned_documents = set(
+        session.exec(
+            select(Document.id).where(
+                col(Document.id).in_(refs.document_ids), Document.owner_id == user.id
+            )
+        )
+    )
+    missing = (set(refs.collection_ids) - owned_collections) | (
+        set(refs.document_ids) - owned_documents
+    )
+    if missing:
+        raise HTTPException(status_code=404, detail="Knowledge base or document not found")
+    session.exec(
+        delete(ConversationAttachment).where(
+            ConversationAttachment.conversation_id == conversation.id
+        )
+    )
+    for cid in owned_collections:
+        session.add(
+            ConversationAttachment(conversation_id=conversation.id, kind="collection", ref_id=cid)
+        )
+    for did in owned_documents:
+        session.add(
+            ConversationAttachment(conversation_id=conversation.id, kind="document", ref_id=did)
+        )
+
+
 def to_detail(session: Session, conversation: Conversation) -> ConversationDetail:
     share = get_share(session, conversation.id)
     return ConversationDetail(
         **conversation.model_dump(exclude={"owner_id"}),
         shared=share is not None,
         share_id=share.id if share else None,
-        messages=[
-            MessageRead.model_validate(m, from_attributes=True)
-            for m in list_messages(session, conversation.id)
-        ],
+        attachments=list_attachments(session, conversation),
+        messages=[message_read(m) for m in list_messages(session, conversation.id)],
     )
 
 
@@ -140,6 +211,9 @@ def create_conversation(
         owner_id=user.id,
     )
     session.add(conversation)
+    session.flush()
+    if body.attachments:
+        set_attachments(session, conversation, body.attachments, user)
     session.commit()
     session.refresh(conversation)
     return to_read(conversation, shared=False)
@@ -196,6 +270,11 @@ def delete_conversation(conversation_id: str, session: SessionDep, user: ActiveU
     # Explicit deletes: SQLite doesn't enforce ON DELETE CASCADE by default.
     session.exec(delete(Message).where(col(Message.conversation_id) == conversation_id))
     session.exec(delete(SharedChat).where(col(SharedChat.conversation_id) == conversation_id))
+    session.exec(
+        delete(ConversationAttachment).where(
+            ConversationAttachment.conversation_id == conversation_id
+        )
+    )
     session.delete(conversation)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -220,7 +299,18 @@ def rate_message(
     session.add(message)
     session.commit()
     session.refresh(message)
-    return MessageRead.model_validate(message, from_attributes=True)
+    return message_read(message)
+
+
+@router.put("/{conversation_id}/attachments", response_model=list[AttachmentRead])
+def update_attachments(
+    conversation_id: str, body: AttachmentRefs, session: SessionDep, user: ActiveUserDep
+) -> list[AttachmentRead]:
+    """Choose which knowledge bases and documents this chat retrieves from."""
+    conversation = get_conversation_or_404(session, conversation_id, user)
+    set_attachments(session, conversation, body, user)
+    session.commit()
+    return list_attachments(session, conversation)
 
 
 @router.post("/{conversation_id}/share", response_model=ShareRead)

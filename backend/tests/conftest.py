@@ -39,6 +39,11 @@ def settings() -> Settings:
         openai_compat_base_url="",
         openai_compat_api_key="",
         anthropic_api_key="",
+        max_upload_mb=10,
+        rag_embedding_engine="",
+        rag_embedding_base_url="",
+        rag_embedding_model="",
+        rag_embedding_api_key="",
     )
 
 

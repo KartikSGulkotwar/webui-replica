@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link, useMatch, useNavigate } from 'react-router-dom'
+import { Link, NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import {
   useConversations,
@@ -10,7 +10,7 @@ import { useDebounced } from '../hooks/useDebounced'
 import { groupByDate } from '../lib/dates'
 import type { Conversation } from '../types/api'
 import ConversationItem from './ConversationItem'
-import { MenuIcon, PlusIcon, SearchIcon, XIcon } from './icons'
+import { BookIcon, MenuIcon, PlusIcon, SearchIcon, XIcon } from './icons'
 import UserMenu from './UserMenu'
 
 interface Props {
@@ -110,6 +110,20 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             <PlusIcon />
             New chat
           </Link>
+          <NavLink
+            to="/knowledge"
+            onClick={afterNavigate}
+            className={({ isActive }) =>
+              `mt-1 flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${
+                isActive
+                  ? 'bg-zinc-200 dark:bg-zinc-800'
+                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
+              }`
+            }
+          >
+            <BookIcon />
+            Knowledge
+          </NavLink>
           <div className="relative mt-2">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input

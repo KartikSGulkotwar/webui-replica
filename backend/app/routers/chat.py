@@ -13,6 +13,13 @@ from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
 from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
 from app.providers.registry import RegistryDep
+from app.rag.service import (
+    attached_document_ids,
+    build_context,
+    embedding_config,
+    retrieve,
+    sources_payload,
+)
 from app.ratelimit import limit_chat
 from app.routers.conversations import get_conversation_or_404, list_messages
 from app.schemas import ChatMessage, ChatParams, ChatStreamRequest
@@ -41,14 +48,22 @@ def sse(payload: dict) -> str:
 
 
 def save_assistant_message(
-    engine: Engine, conversation_id: str, model_id: str, content: str
+    engine: Engine,
+    conversation_id: str,
+    model_id: str,
+    content: str,
+    sources: list[dict] | None = None,
 ) -> int | None:
     with Session(engine) as session:
         conversation = session.get(Conversation, conversation_id)
         if conversation is None:  # deleted while streaming
             return None
         message = Message(
-            conversation_id=conversation_id, role="assistant", content=content, model_id=model_id
+            conversation_id=conversation_id,
+            role="assistant",
+            content=content,
+            model_id=model_id,
+            sources_json=json.dumps(sources) if sources else None,
         )
         conversation.updated_at = utcnow()
         session.add(message)
@@ -65,6 +80,7 @@ async def stream_and_persist(
     model: str,
     history: list[ChatMessage],
     params: ChatParams,
+    sources: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     """Relay provider chunks as normalized SSE and save the assistant reply.
 
@@ -85,9 +101,12 @@ async def stream_and_persist(
         content = "".join(parts)
         if not content:
             return None
-        return save_assistant_message(engine, conversation_id, answered_by, content)
+        return save_assistant_message(engine, conversation_id, answered_by, content, sources)
 
     try:
+        if sources:
+            # Sent first so the citations can be shown while the answer streams.
+            yield sse({"sources": sources})
         async for chunk in provider.stream_chat(model, history, params):
             if chunk.delta:
                 parts.append(chunk.delta)
@@ -178,6 +197,18 @@ async def chat_stream(
     if conversation.system_prompt:
         history.insert(0, ChatMessage(role="system", content=conversation.system_prompt))
 
+    # Retrieval: ground the reply in the chat's attached documents, if any.
+    sources: list[dict] = []
+    document_ids = await run_in_threadpool(attached_document_ids, session, conversation.id, user.id)
+    if document_ids:
+        question = next((m.content for m in reversed(history) if m.role == "user"), "")
+        config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
+        found = await retrieve(session, request.app.state.http, config, document_ids, question)
+        if found:
+            sources = sources_payload(found)
+            position = 1 if conversation.system_prompt else 0
+            history.insert(position, ChatMessage(role="system", content=build_context(found)))
+
     return StreamingResponse(
         stream_and_persist(
             request.app.state.engine,
@@ -187,6 +218,7 @@ async def chat_stream(
             model,
             history,
             body.params,
+            sources,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

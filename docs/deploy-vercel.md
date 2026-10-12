@@ -64,6 +64,7 @@ Keep it somewhere safe. If it changes, stored API keys can no longer be decrypte
    | `ADMIN_PASSWORD` | a strong password for it (change it later under **Account**) |
    | `GUEST_ACCESS` | `true` (visitors can try it without signing up) |
    | `DEFAULT_USER_ROLE` | `user` (people who sign up can chat right away) |
+   | `MAX_UPLOAD_MB` | `4` (Vercel limits request bodies to 4.5 MB) |
    | `DEFAULT_MODEL` | `groq:openai/gpt-oss-120b` (model new visitors start with) |
    | `AUTO_MIGRATE` | `false` |
    | `TRUSTED_PROXY_HOPS` | `1` |
@@ -107,6 +108,15 @@ Sign in with `ADMIN_EMAIL` and open **Admin panel** (bottom-left menu):
 
 Only admins can see provider settings or call the connection-test endpoint, so
 visitors can't read your keys or make the server fetch arbitrary URLs.
+
+## Document search on the demo
+
+The migration enables Postgres's `vector` extension (pgvector), which Neon supports.
+Groq has no embedding models, so the demo searches documents by keyword (BM25) out of
+the box. For semantic search too, open **Admin panel → Documents**, choose
+**OpenAI-compatible API**, and enter an embeddings service, e.g. Voyage AI
+(`https://api.voyageai.com/v1`, model `voyage-3.5`) or OpenAI
+(`https://api.openai.com/v1`, `text-embedding-3-small`). Then click **Re-index**.
 
 ## Limits to know about
 

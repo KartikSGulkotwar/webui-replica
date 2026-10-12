@@ -1,5 +1,6 @@
 import { NavLink, Navigate, useParams } from 'react-router-dom'
 import ConnectionsPanel from '../components/admin/ConnectionsPanel'
+import DocumentsPanel from '../components/admin/DocumentsPanel'
 import GeneralPanel from '../components/admin/GeneralPanel'
 import UsersPanel from '../components/admin/UsersPanel'
 import PageHeader from '../components/PageHeader'
@@ -8,6 +9,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 const TABS = [
   { id: 'users', label: 'Users', Panel: UsersPanel },
   { id: 'connections', label: 'Connections', Panel: ConnectionsPanel },
+  { id: 'documents', label: 'Documents', Panel: DocumentsPanel },
   { id: 'general', label: 'General', Panel: GeneralPanel },
 ] as const
 

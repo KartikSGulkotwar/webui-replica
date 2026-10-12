@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { errorMessage } from '../api/client'
 import { createConversation, deleteConversation } from '../api/conversations'
 import { streamChat } from '../api/stream'
-import type { ChatStreamRequest, ConversationDetail } from '../types/api'
+import type { Attachment, ChatStreamRequest, ConversationDetail, Source } from '../types/api'
 import { conversationKey } from './useConversation'
 
 export type StreamStatus = 'streaming' | 'done' | 'stopped' | 'error'
@@ -30,6 +30,14 @@ export interface PendingExchange {
   error?: string
   /** A send rejected before the backend stored it (rate limit, bad model…): the text goes back to the composer. */
   notSent?: boolean
+  /** Document passages this reply draws on (arrive before the text). */
+  sources?: Source[]
+}
+
+/** Settings for a chat that doesn't exist yet; applied when the first message creates it. */
+export interface NewChatOptions {
+  systemPrompt?: string
+  attachments?: Attachment[]
 }
 
 /** How many server messages there will be once this exchange is saved. */
@@ -51,7 +59,7 @@ export function useChatStream(conversationId: string | undefined) {
   }, [conversationId])
 
   const run = useCallback(
-    async (action: ChatAction, modelId: string, newChatSystemPrompt?: string) => {
+    async (action: ChatAction, modelId: string, newChat: NewChatOptions = {}) => {
       if (abortRef.current) return
       if (!conversationId && action.kind !== 'send') return
       const controller = new AbortController()
@@ -61,12 +69,24 @@ export function useChatStream(conversationId: string | undefined) {
       let convId = conversationId
       try {
         if (!convId) {
-          const conv = await createConversation({ system_prompt: newChatSystemPrompt || undefined })
+          const attachments = newChat.attachments ?? []
+          const conv = await createConversation({
+            system_prompt: newChat.systemPrompt || undefined,
+            attachments: attachments.length
+              ? {
+                  collection_ids: attachments
+                    .filter((a) => a.kind === 'collection')
+                    .map((a) => a.id),
+                  document_ids: attachments.filter((a) => a.kind === 'document').map((a) => a.id),
+                }
+              : undefined,
+          })
           convId = conv.id
           queryClient.setQueryData<ConversationDetail>(conversationKey(conv.id), {
             ...conv,
-            system_prompt: newChatSystemPrompt || null,
+            system_prompt: newChat.systemPrompt || null,
             share_id: null,
+            attachments,
             messages: [],
           })
           streamingConvRef.current = conv.id
@@ -142,7 +162,9 @@ export function useChatStream(conversationId: string | undefined) {
             queryClient.invalidateQueries({ queryKey: ['conversations'] })
           },
           onEvent: (event) => {
-            if ('delta' in event) {
+            if ('sources' in event) {
+              update({ sources: event.sources })
+            } else if ('delta' in event) {
               setPending((p) =>
                 p && p.conversationId === id ? { ...p, text: p.text + event.delta } : p,
               )

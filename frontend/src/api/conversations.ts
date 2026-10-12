@@ -1,5 +1,6 @@
 import { apiFetch } from './client'
 import type {
+  AttachmentRefs,
   Conversation,
   ConversationDetail,
   ConversationPatch,
@@ -21,8 +22,9 @@ export function listConversations(params: { q?: string; archived?: boolean } = {
 
 export const getConversation = (id: string) => apiFetch<ConversationDetail>(path(id))
 
-export const createConversation = (body: { title?: string; system_prompt?: string } = {}) =>
-  apiFetch<Conversation>('/api/conversations', { method: 'POST', body: JSON.stringify(body) })
+export const createConversation = (
+  body: { title?: string; system_prompt?: string; attachments?: AttachmentRefs } = {},
+) => apiFetch<Conversation>('/api/conversations', { method: 'POST', body: JSON.stringify(body) })
 
 export const updateConversation = (id: string, patch: ConversationPatch) =>
   apiFetch<Conversation>(path(id), { method: 'PATCH', body: JSON.stringify(patch) })

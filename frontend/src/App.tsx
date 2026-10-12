@@ -11,6 +11,7 @@ import SharedPage from './pages/SharedPage'
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ArchivedPage = lazy(() => import('./pages/ArchivedPage'))
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage'))
 
 function Lazy({ children }: { children: ReactNode }) {
   return (
@@ -43,6 +44,14 @@ export default function App() {
             element={
               <Lazy>
                 <AccountPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/knowledge/:id?"
+            element={
+              <Lazy>
+                <KnowledgePage />
               </Lazy>
             }
           />

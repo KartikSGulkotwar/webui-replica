@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from sqlalchemy import Column, ForeignKey, String, Text
 from sqlmodel import Field, SQLModel
 
+from app.rag.vector import Embedding
+
 DEFAULT_TITLE = "New chat"
 
 
@@ -65,6 +67,8 @@ class Message(SQLModel, table=True):
     # User feedback on an assistant reply: 1 (good), -1 (bad), or None.
     rating: int | None = Field(default=None)
     rating_comment: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Document excerpts the reply was grounded in (JSON list), for citations.
+    sources_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -143,3 +147,76 @@ class SharedChat(SQLModel, table=True):
     messages_json: str = Field(sa_column=Column(Text, nullable=False))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class KnowledgeCollection(SQLModel, table=True):
+    """A named set of documents ("knowledge base") that chats can draw on."""
+
+    __tablename__ = "knowledge_collections"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    owner_id: str = Field(max_length=32, index=True)
+    name: str = Field(max_length=100)
+    description: str = Field(default="", max_length=500)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class Document(SQLModel, table=True):
+    """An uploaded file, stored as its extracted text chunks (not the file itself)."""
+
+    __tablename__ = "documents"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    owner_id: str = Field(max_length=32, index=True)
+    # None: attached to a single chat rather than a knowledge base.
+    collection_id: str | None = Field(
+        default=None,
+        sa_column=Column(
+            String(32),
+            ForeignKey("knowledge_collections.id", ondelete="CASCADE"),
+            nullable=True,
+            index=True,
+        ),
+    )
+    filename: str = Field(max_length=255)
+    size_bytes: int = Field(default=0)
+    page_count: int | None = Field(default=None)
+    chunk_count: int = Field(default=0)
+    # Set when the document is searchable by keyword only (embedding failed).
+    warning: str | None = Field(default=None, max_length=500)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class DocumentChunk(SQLModel, table=True):
+    __tablename__ = "document_chunks"
+
+    id: int | None = Field(default=None, primary_key=True)
+    document_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    position: int
+    page: int | None = Field(default=None)
+    text: str = Field(sa_column=Column(Text, nullable=False))
+    embedding: list[float] | None = Field(default=None, sa_column=Column(Embedding, nullable=True))
+    # Which engine:model produced the embedding; vectors from different models
+    # aren't comparable, so search only uses chunks matching the current one.
+    embedding_model: str | None = Field(default=None, max_length=200, index=True)
+
+
+class ConversationAttachment(SQLModel, table=True):
+    """Knowledge bases or single documents a chat retrieves from."""
+
+    __tablename__ = "conversation_attachments"
+
+    conversation_id: str = Field(
+        sa_column=Column(
+            String(32),
+            ForeignKey("conversations.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    kind: str = Field(primary_key=True, max_length=20)  # "collection" | "document"
+    ref_id: str = Field(primary_key=True, max_length=32)
