@@ -37,6 +37,9 @@ export default function AuthPage() {
 
   const next = safeNext(params.get('next'))
   if (me.data) return <Navigate to={next} replace />
+  // Wait for the site settings: they decide between "create the admin account"
+  // and normal sign-in, and rendering early flashes the wrong one.
+  if (config.isLoading) return <div className="h-full bg-white dark:bg-zinc-950" />
 
   const busy = login.isPending || signup.isPending || guest.isPending
   const error = signup.error ?? login.error ?? guest.error

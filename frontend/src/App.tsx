@@ -12,6 +12,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ArchivedPage = lazy(() => import('./pages/ArchivedPage'))
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'))
+const ModelsPage = lazy(() => import('./pages/ModelsPage'))
 
 function Lazy({ children }: { children: ReactNode }) {
   return (
@@ -52,6 +53,14 @@ export default function App() {
             element={
               <Lazy>
                 <KnowledgePage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/models"
+            element={
+              <Lazy>
+                <ModelsPage />
               </Lazy>
             }
           />

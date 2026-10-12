@@ -220,3 +220,38 @@ class ConversationAttachment(SQLModel, table=True):
     )
     kind: str = Field(primary_key=True, max_length=20)  # "collection" | "document"
     ref_id: str = Field(primary_key=True, max_length=32)
+
+
+class ModelSetting(SQLModel, table=True):
+    """Admin overrides for a provider model: hide it, or give it a friendlier name."""
+
+    __tablename__ = "model_settings"
+
+    model_id: str = Field(primary_key=True, max_length=300)  # namespaced "provider:model"
+    hidden: bool = Field(default=False)
+    display_name: str | None = Field(default=None, max_length=100)
+
+
+class CustomModel(SQLModel, table=True):
+    """A saved assistant: a base model plus instructions and knowledge."""
+
+    __tablename__ = "custom_models"
+
+    # Used in model IDs as "persona:{id}", so it's a slug without colons.
+    id: str = Field(primary_key=True, max_length=64)
+    owner_id: str = Field(max_length=32, index=True)
+    name: str = Field(max_length=100)
+    description: str = Field(default="", max_length=500)
+    emoji: str = Field(default="🤖", max_length=16)
+    base_model_id: str = Field(max_length=300)
+    system_prompt: str = Field(
+        default="", sa_column=Column(Text, nullable=False, server_default="")
+    )
+    # JSON list of knowledge collection IDs owned by the creator.
+    knowledge_json: str = Field(
+        default="[]", sa_column=Column(Text, nullable=False, server_default="[]")
+    )
+    # "private": only the creator; "public": every approved user (admins only).
+    visibility: str = Field(default="private", max_length=20)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)

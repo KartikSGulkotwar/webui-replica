@@ -153,11 +153,20 @@ export default function ChatPage() {
         </div>
       ) : isEmpty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">How can I help?</h1>
+          {selected?.provider_kind === 'custom' && (
+            <span className="text-4xl" aria-hidden="true">
+              {selected.emoji}
+            </span>
+          )}
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {selected?.provider_kind === 'custom' ? selected.name : 'How can I help?'}
+          </h1>
           <p className="text-sm text-zinc-500">
-            {selected
-              ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
-              : (disabledReason ?? '')}
+            {selected?.provider_kind === 'custom'
+              ? (selected.description ?? `${selected.name} is ready.`)
+              : selected
+                ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
+                : (disabledReason ?? '')}
           </p>
           {draftSystemPrompt && (
             <p className="max-w-md text-xs text-indigo-500">

@@ -169,6 +169,18 @@ def attached_document_ids(session: Session, conversation_id: str, owner_id: str)
     return list(session.exec(stmt.where(or_(*clauses))))
 
 
+def collection_document_ids(
+    session: Session, collection_ids: list[str], owner_id: str
+) -> list[str]:
+    """Documents in these knowledge bases, if they belong to owner_id."""
+    if not collection_ids:
+        return []
+    owned = select(KnowledgeCollection.id).where(
+        col(KnowledgeCollection.id).in_(collection_ids), KnowledgeCollection.owner_id == owner_id
+    )
+    return list(session.exec(select(Document.id).where(col(Document.collection_id).in_(owned))))
+
+
 async def retrieve(
     session: Session,
     http: httpx.AsyncClient,

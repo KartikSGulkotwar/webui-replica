@@ -56,7 +56,9 @@ export default function ModelSelector({
     return data.providers.map((provider) => ({
       provider,
       models: data.models.filter(
-        (m) => m.provider_id === provider.id && (!q || m.name.toLowerCase().includes(q)),
+        (m) =>
+          m.provider_id === provider.id &&
+          (!q || m.name.toLowerCase().includes(q) || !!m.description?.toLowerCase().includes(q)),
       ),
     }))
   }, [data, query])
@@ -71,7 +73,10 @@ export default function ModelSelector({
     label = (
       <>
         <HealthDot ok={selectedProvider?.ok ?? true} />
-        <span className="truncate font-medium">{selected.name}</span>
+        <span className="truncate font-medium">
+          {selected.emoji ? `${selected.emoji} ` : ''}
+          {selected.name}
+        </span>
         <span className="hidden truncate text-zinc-500 sm:inline">· {selected.provider_name}</span>
       </>
     )
@@ -173,7 +178,17 @@ export default function ModelSelector({
                         active ? 'font-medium' : ''
                       }`}
                     >
-                      <span className="truncate">{m.name}</span>
+                      <span className="flex min-w-0 items-start gap-2">
+                        {m.emoji && <span aria-hidden="true">{m.emoji}</span>}
+                        <span className="min-w-0">
+                          <span className="block truncate">{m.name}</span>
+                          {m.description && (
+                            <span className="block truncate text-xs font-normal text-zinc-500">
+                              {m.description}
+                            </span>
+                          )}
+                        </span>
+                      </span>
                       {active && <CheckIcon className="shrink-0 text-indigo-500" />}
                     </button>
                   )

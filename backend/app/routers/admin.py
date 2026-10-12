@@ -4,14 +4,17 @@ from sqlmodel import col, delete, func, select
 
 from app.app_settings import get_admin_settings, save_admin_settings
 from app.auth import AdminUserDep
+from app.catalog import provider_models
 from app.db import SessionDep
 from app.models import (
     Conversation,
     ConversationAttachment,
+    CustomModel,
     Document,
     DocumentChunk,
     KnowledgeCollection,
     Message,
+    ModelSetting,
     OAuthAccount,
     SharedChat,
     User,
@@ -26,6 +29,8 @@ from app.rag.service import (
 )
 from app.routers.auth import to_read
 from app.schemas import (
+    AdminModelRead,
+    AdminModelUpdate,
     AdminSettings,
     AdminUserUpdate,
     EmbeddingSettingsRead,
@@ -81,6 +86,7 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     session.exec(delete(DocumentChunk).where(col(DocumentChunk.document_id).in_(document_ids)))
     session.exec(delete(Document).where(Document.owner_id == user.id))
     session.exec(delete(KnowledgeCollection).where(KnowledgeCollection.owner_id == user.id))
+    session.exec(delete(CustomModel).where(CustomModel.owner_id == user.id))
     session.exec(delete(Conversation).where(Conversation.owner_id == user.id))
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     session.delete(user)
@@ -181,3 +187,48 @@ async def reindex(request: Request, session: SessionDep, admin: AdminUserDep) ->
     except ProviderError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"reindexed_chunks": count}
+
+
+# --- models (visibility and names) ----------------------------------------------------
+
+
+@router.get("/models", response_model=list[AdminModelRead])
+async def list_all_models(
+    request: Request, session: SessionDep, admin: AdminUserDep
+) -> list[AdminModelRead]:
+    """Every provider model, including hidden ones, with its admin settings."""
+    registry = request.app.state.registry
+    registry.sync(session)
+    models, statuses = await provider_models(registry)
+    settings = {s.model_id: s for s in session.exec(select(ModelSetting))}
+    ok = {s.id: s.ok for s in statuses}
+    rows = [
+        AdminModelRead(
+            id=m.id,
+            name=m.name,
+            display_name=settings[m.id].display_name if m.id in settings else None,
+            hidden=settings[m.id].hidden if m.id in settings else False,
+            provider_id=m.provider_id,
+            provider_name=m.provider_name,
+            provider_ok=ok.get(m.provider_id, False),
+        )
+        for m in models
+    ]
+    return sorted(rows, key=lambda r: (r.provider_name.lower(), r.name.lower()))
+
+
+@router.put("/models", status_code=status.HTTP_204_NO_CONTENT)
+def update_model(body: AdminModelUpdate, session: SessionDep, admin: AdminUserDep) -> Response:
+    """Hide/show a model or rename it. Settings for unknown IDs are kept, so a
+    model that's temporarily offline keeps its settings."""
+    display = (body.display_name or "").strip() or None
+    row = session.get(ModelSetting, body.model_id)
+    if not body.hidden and display is None:
+        if row is not None:
+            session.delete(row)
+    else:
+        row = row or ModelSetting(model_id=body.model_id)
+        row.hidden, row.display_name = body.hidden, display
+        session.add(row)
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -9,13 +9,15 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from app.auth import ActiveUserDep
+from app.catalog import resolve_model
 from app.db import SessionDep
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
-from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
+from app.providers.base import BaseProvider, ProviderError, RefusalError
 from app.providers.registry import RegistryDep
 from app.rag.service import (
     attached_document_ids,
     build_context,
+    collection_document_ids,
     embedding_config,
     retrieve,
     sources_payload,
@@ -149,10 +151,9 @@ async def chat_stream(
     user: ActiveUserDep,
 ) -> StreamingResponse:
     # Validate everything we can before streaming so failures are plain HTTP errors.
-    try:
-        provider_id, model = split_model_id(body.model_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # A custom model resolves to its base model plus its instructions/knowledge.
+    resolved = resolve_model(session, user, body.model_id)
+    provider_id, model = resolved.provider_id, resolved.model
 
     conversation = get_conversation_or_404(session, body.conversation_id, user)
 
@@ -194,20 +195,31 @@ async def chat_stream(
         ChatMessage(role=m.role, content=m.content)  # type: ignore[arg-type]
         for m in list_messages(session, conversation.id)
     ]
-    if conversation.system_prompt:
-        history.insert(0, ChatMessage(role="system", content=conversation.system_prompt))
+    # Instructions, most general first: the custom model's, then this chat's.
+    prompts = [
+        p
+        for p in (resolved.persona and resolved.persona.system_prompt, conversation.system_prompt)
+        if p
+    ]
+    for i, prompt in enumerate(prompts):
+        history.insert(i, ChatMessage(role="system", content=prompt))
 
-    # Retrieval: ground the reply in the chat's attached documents, if any.
+    # Retrieval: ground the reply in the chat's attached documents and the
+    # custom model's knowledge bases (which belong to the model's creator).
     sources: list[dict] = []
     document_ids = await run_in_threadpool(attached_document_ids, session, conversation.id, user.id)
+    if resolved.persona and resolved.knowledge_ids:
+        document_ids += await run_in_threadpool(
+            collection_document_ids, session, resolved.knowledge_ids, resolved.persona.owner_id
+        )
+    document_ids = list(dict.fromkeys(document_ids))
     if document_ids:
         question = next((m.content for m in reversed(history) if m.role == "user"), "")
         config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
         found = await retrieve(session, request.app.state.http, config, document_ids, question)
         if found:
             sources = sources_payload(found)
-            position = 1 if conversation.system_prompt else 0
-            history.insert(position, ChatMessage(role="system", content=build_context(found)))
+            history.insert(len(prompts), ChatMessage(role="system", content=build_context(found)))
 
     return StreamingResponse(
         stream_and_persist(

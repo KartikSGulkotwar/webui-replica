@@ -17,12 +17,20 @@ class ChatParams(BaseModel):
     max_tokens: int | None = None
 
 
+# Kinds in the model menu: real providers, plus "custom" for saved assistants.
+CatalogKind = Literal["ollama", "openai_compat", "anthropic", "custom"]
+
+
 class ModelInfo(BaseModel):
     id: str  # namespaced: "{provider_id}:{name}"
     name: str
     provider_id: str
     provider_name: str
-    provider_kind: ProviderKind
+    provider_kind: CatalogKind
+    # Custom models only:
+    description: str | None = None
+    emoji: str | None = None
+    base_model_id: str | None = None
 
 
 class ProviderHealth(BaseModel):
@@ -46,7 +54,7 @@ class StreamChunk(BaseModel):
 class ProviderStatus(BaseModel):
     id: str
     name: str
-    kind: ProviderKind
+    kind: CatalogKind
     ok: bool
     error: str | None = None
 
@@ -359,3 +367,47 @@ class EmbeddingSettingsUpdate(BaseModel):
     model: str = Field(default="", max_length=200)
     # Omit/null to keep the stored key, "" to remove it.
     api_key: str | None = Field(default=None, max_length=1000)
+
+
+# --- model management ----------------------------------------------------------------
+
+
+class AdminModelRead(BaseModel):
+    id: str
+    name: str  # the provider's own model name
+    display_name: str | None
+    hidden: bool
+    provider_id: str
+    provider_name: str
+    provider_ok: bool
+
+
+class AdminModelUpdate(BaseModel):
+    model_id: str = Field(min_length=3, max_length=300)
+    hidden: bool
+    display_name: str | None = Field(default=None, max_length=100)
+
+
+class CustomModelWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=500)
+    emoji: str = Field(default="🤖", min_length=1, max_length=16)
+    base_model_id: str = Field(min_length=3, max_length=300)
+    system_prompt: str = Field(default="", max_length=20_000)
+    knowledge_ids: list[str] = Field(default_factory=list, max_length=20)
+    visibility: Literal["private", "public"] = "private"
+
+
+class CustomModelRead(BaseModel):
+    id: str  # use as model_id "persona:{id}"
+    model_id: str
+    name: str
+    description: str
+    emoji: str
+    base_model_id: str
+    system_prompt: str
+    knowledge: list[AttachmentRead]
+    visibility: Literal["private", "public"]
+    is_owner: bool
+    created_at: datetime
+    updated_at: datetime

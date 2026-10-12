@@ -5,19 +5,26 @@ export interface HealthResponse {
 
 export type ProviderKind = 'ollama' | 'openai_compat' | 'anthropic'
 
+/** Groups in the model menu: real providers, plus saved custom models. */
+export type CatalogKind = ProviderKind | 'custom'
+
 export interface ModelInfo {
-  /** Namespaced: "{provider_id}:{name}" */
+  /** Namespaced: "{provider_id}:{name}"; custom models are "persona:{id}" */
   id: string
   name: string
   provider_id: string
   provider_name: string
-  provider_kind: ProviderKind
+  provider_kind: CatalogKind
+  /** Custom models only. */
+  description?: string | null
+  emoji?: string | null
+  base_model_id?: string | null
 }
 
 export interface ProviderStatus {
   id: string
   name: string
-  kind: ProviderKind
+  kind: CatalogKind
   ok: boolean
   error: string | null
 }
@@ -216,4 +223,33 @@ export interface User {
 export interface AdminSettings {
   enable_signup: boolean
   default_user_role: 'user' | 'pending'
+}
+
+export interface AdminModel {
+  id: string
+  name: string
+  display_name: string | null
+  hidden: boolean
+  provider_id: string
+  provider_name: string
+  provider_ok: boolean
+}
+
+export interface CustomModelInput {
+  name: string
+  description: string
+  emoji: string
+  base_model_id: string
+  system_prompt: string
+  knowledge_ids: string[]
+  visibility: 'private' | 'public'
+}
+
+export interface CustomModel extends Omit<CustomModelInput, 'knowledge_ids'> {
+  id: string
+  model_id: string
+  knowledge: Attachment[]
+  is_owner: boolean
+  created_at: string
+  updated_at: string
 }
