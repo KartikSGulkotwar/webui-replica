@@ -4,7 +4,7 @@ import logging
 import random
 import threading
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -17,6 +17,13 @@ from app.app_settings import get_admin_settings, usable_tools
 from app.auth import ActiveUserDep
 from app.catalog import ARENA_MODEL_ID, ResolvedModel, resolve_model
 from app.db import SessionDep
+from app.images.engines import ImageError, generate
+from app.images.service import (
+    delete_message_images,
+    image_config,
+    make_image_prompt,
+    store_image,
+)
 from app.memory import memory_context, relevant_memories
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
 from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
@@ -79,6 +86,7 @@ def save_assistant_message(
     usage: dict | None = None,
     slot: int | None = None,
     blind: bool = False,
+    images: list[dict] | None = None,
 ) -> int | None:
     # Side-by-side replies can finish together; SQLite allows one writer at a time.
     with _save_lock, Session(engine) as session:
@@ -96,6 +104,7 @@ def save_assistant_message(
             completion_tokens=(usage or {}).get("completion_tokens"),
             slot=slot,
             blind=blind,
+            images_json=json.dumps(images) if images else None,
         )
         conversation.updated_at = utcnow()
         session.add(message)
@@ -158,6 +167,64 @@ async def web_search_step(
     )
 
 
+@dataclass(frozen=True)
+class ImageStep:
+    """What the Image toggle adds to a reply: its step, the image, and a note for the model."""
+
+    trace: dict
+    context: ChatMessage
+    images: list[dict]
+
+
+async def image_step(
+    provider: BaseProvider,
+    model: str,
+    messages: list[ChatMessage],
+    ctx: ToolContext,
+) -> AsyncIterator[dict | ImageStep]:
+    """Make an image from the message before the reply. Yields the step's events
+    (shown like a tool call), then an ImageStep."""
+    prompt = await make_image_prompt(provider, model, messages)
+    step = {"id": "generate_image", "name": "generate_image", "arguments": {"prompt": prompt}}
+    yield {"tool_call": step}
+    images: list[dict] = []
+    try:
+        if ctx.image_config is None or ctx.engine is None or ctx.user_id is None:
+            raise ImageError("Image generation isn't set up")
+        image = await generate(ctx.http, ctx.image_config, prompt)
+        image_id = await run_in_threadpool(
+            store_image,
+            ctx.engine,
+            ctx.user_id,
+            ctx.conversation_id,
+            prompt,
+            image.data,
+            image.mime,
+        )
+        images = [{"id": image_id, "prompt": prompt}]
+        output, error = "Created 1 image", False
+    except ImageError as exc:
+        output, error = str(exc), True
+    yield {"tool_result": {"id": step["id"], "output": output, "error": error}}
+    if images:
+        yield {"images": images}
+        note = (
+            f'An image was generated for the user from this prompt: "{prompt}". It is shown '
+            "above your reply. Present it in one or two short sentences. You can't see it, so "
+            "don't describe details beyond the prompt, and don't add links or markdown images."
+        )
+    else:
+        note = (
+            f"Generating the image the user asked for failed ({output}). Tell them briefly "
+            "and suggest trying again; don't attempt to draw it in text."
+        )
+    yield ImageStep(
+        trace={**step, "output": output, "error": error},
+        context=ChatMessage(role="system", content=note),
+        images=images,
+    )
+
+
 async def stream_and_persist(
     engine: Engine,
     provider: BaseProvider,
@@ -176,6 +243,8 @@ async def stream_and_persist(
     slot: int | None = None,
     blind: bool = False,
     trace_prefix: list[dict] | None = None,
+    make_image: bool = False,
+    images_prefix: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     """Relay provider chunks as normalized SSE and save the assistant reply.
 
@@ -196,6 +265,11 @@ async def stream_and_persist(
     trace: list[dict] = list(trace_prefix or [])
     saved = False
     usage: dict[str, int] = {}
+    images: list[dict] = list(images_prefix or [])
+    tool_images_sent = 0
+    # Images the generate_image tool makes are collected per reply.
+    if tool_context is not None:
+        tool_context = replace(tool_context, images=[])
 
     def sse(payload: dict) -> str:
         return _sse({**payload, **tag} if tag else payload)
@@ -217,7 +291,7 @@ async def stream_and_persist(
         nonlocal saved
         saved = True
         content = "".join(parts)
-        if not content.strip() and not trace:
+        if not content.strip() and not trace and not images:
             return None
         return save_assistant_message(
             engine,
@@ -229,6 +303,7 @@ async def stream_and_persist(
             usage or None,
             slot,
             blind,
+            images,
         )
 
     messages = list(history)
@@ -245,6 +320,17 @@ async def stream_and_persist(
                     messages.insert(lead, item.context)
                 else:
                     yield sse(item)
+        if make_image and tool_context is not None:
+            async for item in image_step(provider, model, messages, tool_context):
+                if isinstance(item, ImageStep):
+                    trace.append(item.trace)
+                    images += item.images
+                    lead = next((i for i, m in enumerate(messages) if m.role != "system"), 0)
+                    messages.insert(lead, item.context)
+                else:
+                    yield sse(item)
+        if images_prefix:
+            yield sse({"images": images_prefix})
         if sources:
             # Sent before the text so the citations can be shown while the answer streams.
             yield sse({"sources": sources})
@@ -310,6 +396,12 @@ async def stream_and_persist(
                     }
                 )
                 yield sse({"tool_result": {"id": call.id, "output": shown, "error": outcome.error}})
+                made = (tool_context.images or []) if tool_context else []
+                if len(made) > tool_images_sent:
+                    new = made[tool_images_sent:]
+                    tool_images_sent = len(made)
+                    images += new
+                    yield sse({"images": new})
                 messages.append(
                     ChatMessage(
                         role="tool",
@@ -415,6 +507,7 @@ async def side_by_side(
     web_search: WebSearchConfig | None,
     http: httpx.AsyncClient,
     blind: bool,
+    make_image: bool = False,
 ) -> AsyncIterator[str]:
     """Several models answer the same message at once. Every event names its
     reply ({"reply": i}); a final untagged {"done": true} ends the turn."""
@@ -440,12 +533,25 @@ async def side_by_side(
             else:
                 for i in range(len(targets)):
                     yield sse({**item, "reply": i})
+    # One image, shown with every reply.
+    drawn: ImageStep | None = None
+    if make_image:
+        lead = targets[0]
+        async for item in image_step(
+            lead.provider, lead.resolved.model, prepared[0].history, tool_context
+        ):
+            if isinstance(item, ImageStep):
+                drawn = item
+            elif "images" not in item:  # each reply announces the images itself
+                for i in range(len(targets)):
+                    yield sse({**item, "reply": i})
     streams = []
     for i, (t, p) in enumerate(zip(targets, prepared, strict=True)):
         history = list(p.history)
-        if step is not None:
-            at = next((k for k, m in enumerate(history) if m.role != "system"), 0)
-            history.insert(at, step.context)
+        at = next((k for k, m in enumerate(history) if m.role != "system"), 0)
+        for added in (step, drawn):
+            if added is not None:
+                history.insert(at, added.context)
         streams.append(
             stream_and_persist(
                 engine,
@@ -461,7 +567,8 @@ async def side_by_side(
                 tag={"reply": i},
                 slot=i,
                 blind=blind,
-                trace_prefix=[step.trace] if step else None,
+                trace_prefix=[x.trace for x in (step, drawn) if x is not None] or None,
+                images_prefix=drawn.images if drawn else None,
             )
         )
     async for event in merge(streams):
@@ -548,11 +655,13 @@ async def chat_stream(
             if reply.blind:
                 raise HTTPException(status_code=400, detail="Arena replies can't be regenerated")
             slot = reply.slot
+            delete_message_images(session, [reply])
             session.delete(reply)
         else:
             # Replace every reply to the last message, possibly with other models.
             for m in messages:
                 if m.role == "assistant" and (m.id or 0) > last_user:
+                    delete_message_images(session, [m])
                     session.delete(m)
     else:  # edit
         target = next((m for m in messages if m.id == body.message_id and m.role == "user"), None)
@@ -561,6 +670,7 @@ async def chat_stream(
         # The conversation continues from the edited message: later turns are dropped.
         for m in messages:
             if m.id > target.id:
+                delete_message_images(session, [m])
                 session.delete(m)
         target.content = body.message or ""
         session.add(target)
@@ -581,6 +691,9 @@ async def chat_stream(
     search_config = web_search_config(session, settings, cipher)
     if body.web_search and not search_config.enabled:
         raise HTTPException(status_code=400, detail="Web search isn't set up on this server")
+    images_config = image_config(session, settings, cipher)
+    if body.image_generation and not images_config.enabled:
+        raise HTTPException(status_code=400, detail="Image generation isn't set up on this server")
     http: httpx.AsyncClient = request.app.state.http
 
     async def prepare(t: Target) -> Prepared:
@@ -616,7 +729,12 @@ async def chat_stream(
         return Prepared(prefix + thread_for(stored, t.model_id), sources, tools)
 
     tool_context = ToolContext(
-        http=http, web_search=search_config, engine=request.app.state.engine, user_id=user.id
+        http=http,
+        web_search=search_config,
+        engine=request.app.state.engine,
+        user_id=user.id,
+        conversation_id=conversation.id,
+        image_config=images_config,
     )
     web = search_config if body.web_search else None
     if len(targets) == 1:
@@ -636,6 +754,7 @@ async def chat_stream(
             web,
             http,
             slot=slot,
+            make_image=body.image_generation,
         )
     else:
         stream = side_by_side(
@@ -648,6 +767,7 @@ async def chat_stream(
             web,
             http,
             blind,
+            body.image_generation,
         )
     return StreamingResponse(
         stream,

@@ -11,6 +11,7 @@ from app.models import (
     Conversation,
     ConversationAttachment,
     Document,
+    GeneratedImage,
     KnowledgeCollection,
     Message,
     SharedChat,
@@ -68,9 +69,10 @@ def to_read(conversation: Conversation, shared: bool, snippet: str | None = None
 
 def message_read(m: Message) -> MessageRead:
     return MessageRead(
-        **m.model_dump(exclude={"sources_json", "tools_json", "conversation_id"}),
+        **m.model_dump(exclude={"sources_json", "tools_json", "images_json", "conversation_id"}),
         sources=json.loads(m.sources_json) if m.sources_json else None,
         tools=json.loads(m.tools_json) if m.tools_json else None,
+        images=json.loads(m.images_json) if m.images_json else None,
     )
 
 
@@ -294,6 +296,7 @@ def delete_conversation(conversation_id: str, session: SessionDep, user: ActiveU
     # Explicit deletes: SQLite doesn't enforce ON DELETE CASCADE by default.
     session.exec(delete(Message).where(col(Message.conversation_id) == conversation_id))
     session.exec(delete(SharedChat).where(col(SharedChat.conversation_id) == conversation_id))
+    session.exec(delete(GeneratedImage).where(GeneratedImage.conversation_id == conversation_id))
     session.exec(
         delete(ConversationAttachment).where(
             ConversationAttachment.conversation_id == conversation_id
@@ -363,7 +366,12 @@ def share_conversation(conversation_id: str, session: SessionDep, user: ActiveUs
     conversation = get_conversation_or_404(session, conversation_id, user)
     snapshot = json.dumps(
         [
-            {"role": m.role, "content": m.content, "model_id": m.model_id}
+            {
+                "role": m.role,
+                "content": m.content,
+                "model_id": m.model_id,
+                "images": [i.model_dump() for i in m.images] if m.images else None,
+            }
             for m in messages_read(list_messages(session, conversation.id))
             if m.role != "system"
         ]

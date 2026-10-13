@@ -1,3 +1,4 @@
+import base64
 from dataclasses import asdict
 
 import httpx
@@ -9,12 +10,15 @@ from app.app_settings import get_admin_settings, save_admin_settings
 from app.auth import AdminUserDep
 from app.catalog import provider_models
 from app.db import SessionDep
+from app.images.engines import ImageError, generate
+from app.images.service import image_config, load_image_settings, save_image_settings
 from app.models import (
     Conversation,
     ConversationAttachment,
     CustomModel,
     Document,
     DocumentChunk,
+    GeneratedImage,
     KnowledgeCollection,
     Memory,
     Message,
@@ -39,6 +43,9 @@ from app.schemas import (
     AdminUserUpdate,
     EmbeddingSettingsRead,
     EmbeddingSettingsUpdate,
+    ImageSettingsRead,
+    ImageSettingsUpdate,
+    ImageTest,
     LeaderboardEntry,
     UsageReport,
     UserRead,
@@ -105,6 +112,7 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     session.exec(delete(Conversation).where(Conversation.owner_id == user.id))
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     session.exec(delete(Memory).where(Memory.owner_id == user.id))
+    session.exec(delete(GeneratedImage).where(GeneratedImage.owner_id == user.id))
     session.delete(user)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -271,6 +279,71 @@ async def test_web_search(
     except SearchError as exc:
         return {"ok": False, "error": str(exc), "results": []}
     return {"ok": True, "results": [asdict(r) for r in results]}
+
+
+# --- image generation ---------------------------------------------------------------
+
+
+def image_read(request: Request, session) -> ImageSettingsRead:
+    stored = load_image_settings(session, request.app.state.settings)
+    return ImageSettingsRead(
+        engine=stored.get("engine") or "",
+        base_url=stored.get("base_url") or "",
+        model=stored.get("model") or "",
+        size=stored.get("size") or "1024x1024",
+        has_key=bool(stored.get("api_key_encrypted") or stored.get("env_api_key")),
+    )
+
+
+@router.get("/images", response_model=ImageSettingsRead)
+def read_image_settings(
+    request: Request, session: SessionDep, admin: AdminUserDep
+) -> ImageSettingsRead:
+    return image_read(request, session)
+
+
+@router.put("/images", response_model=ImageSettingsRead)
+def write_image_settings(
+    body: ImageSettingsUpdate, request: Request, session: SessionDep, admin: AdminUserDep
+) -> ImageSettingsRead:
+    stored = load_image_settings(session, request.app.state.settings)
+    values = {
+        "engine": body.engine,
+        "base_url": body.base_url.strip().rstrip("/"),
+        "model": body.model.strip(),
+        "size": body.size,
+        "api_key_encrypted": stored.get("api_key_encrypted"),
+        "env_api_key": stored.get("env_api_key", False),
+    }
+    if body.engine in ("openai", "automatic1111") and not values["base_url"]:
+        raise HTTPException(status_code=422, detail="The base URL is required")
+    if body.engine == "openai" and not values["model"]:
+        raise HTTPException(status_code=422, detail="The model is required, e.g. gpt-image-1")
+    if body.api_key is not None:
+        key = body.api_key.strip()
+        try:
+            values["api_key_encrypted"] = request.app.state.cipher.encrypt(key) if key else None
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        values["env_api_key"] = False
+    save_image_settings(session, values)
+    return image_read(request, session)
+
+
+@router.post("/images/test")
+async def test_image(
+    body: ImageTest, request: Request, session: SessionDep, admin: AdminUserDep
+) -> dict:
+    """Make one image with the saved settings and return it inline (not stored)."""
+    config = image_config(session, request.app.state.settings, request.app.state.cipher)
+    if not config.enabled:
+        raise HTTPException(status_code=400, detail="Image generation isn't set up")
+    try:
+        image = await generate(request.app.state.http, config, body.prompt)
+    except ImageError as exc:
+        return {"ok": False, "error": str(exc)}
+    encoded = base64.b64encode(image.data).decode()
+    return {"ok": True, "data_url": f"data:{image.mime};base64,{encoded}"}
 
 
 # --- analytics & evaluations ---------------------------------------------------------

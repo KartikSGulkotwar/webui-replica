@@ -49,7 +49,14 @@ class Settings(BaseSettings):
     rag_embedding_api_key: str = ""
 
     # Tools the model may call (comma-separated); admins change this at runtime.
-    enabled_tools: str = "calculator,current_time,fetch_url,web_search,add_memory"
+    enabled_tools: str = "calculator,current_time,fetch_url,web_search,add_memory,generate_image"
+    # Image generation: pollinations (free, no key), openai (OpenAI-compatible
+    # /images/generations: base URL + model + key) or automatic1111 (base URL); blank = off.
+    image_engine: str = ""
+    image_base_url: str = ""
+    image_api_key: str = ""
+    image_model: str = ""
+    image_size: str = "1024x1024"
     # Arena: provider models (comma-separated IDs) that answer blind side by side.
     arena_models: str = ""
     # Web search: duckduckgo (no key), searxng (base URL), brave or tavily (API key); blank = off.

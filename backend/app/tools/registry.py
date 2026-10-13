@@ -11,6 +11,8 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import Engine
 from sqlmodel import Session
 
+from app.images.engines import ImageConfig, ImageError, generate
+from app.images.service import store_image
 from app.memory import add_memory
 from app.models import User
 from app.tools.calculator import CalculatorError, calculate
@@ -29,9 +31,13 @@ class ToolInputError(ValueError):
 class ToolContext:
     http: httpx.AsyncClient
     web_search: WebSearchConfig | None = None
-    # For tools that act on the signed-in user's data (memory).
+    # For tools that act on the signed-in user's data (memory, images).
     engine: Engine | None = None
     user_id: str | None = None
+    conversation_id: str | None = None
+    image_config: ImageConfig | None = None
+    # Images made while writing one reply; each reply gets its own list.
+    images: list[dict] | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,27 @@ async def _add_memory(args: dict[str, Any], ctx: ToolContext) -> str:
     if ctx.engine is None or ctx.user_id is None:
         raise ToolInputError("Memory isn't available here")
     return await run_in_threadpool(_save_memory, ctx.engine, ctx.user_id, content)
+
+
+async def _generate_image(args: dict[str, Any], ctx: ToolContext) -> str:
+    prompt = _string_arg(args, "prompt", max_len=2000) or ""
+    if ctx.image_config is None or not ctx.image_config.enabled:
+        raise ToolInputError("Image generation isn't set up on this server")
+    if ctx.engine is None or ctx.user_id is None:
+        raise ToolInputError("Images aren't available here")
+    try:
+        image = await generate(ctx.http, ctx.image_config, prompt)
+    except ImageError as exc:
+        raise ToolInputError(str(exc)) from exc
+    image_id = await run_in_threadpool(
+        store_image, ctx.engine, ctx.user_id, ctx.conversation_id, prompt, image.data, image.mime
+    )
+    if ctx.images is not None:
+        ctx.images.append({"id": image_id, "prompt": prompt})
+    return (
+        "The image was generated and is shown to the user with your reply. Don't add a link "
+        "or a markdown image; you can't see it, so don't describe details beyond the prompt."
+    )
 
 
 TOOLS: dict[str, Tool] = {
@@ -224,6 +251,26 @@ TOOLS: dict[str, Tool] = {
                 "additionalProperties": False,
             },
             run=_add_memory,
+        ),
+        Tool(
+            id="generate_image",
+            label="Image",
+            emoji="🎨",
+            description=(
+                "Create an image from a text description. Use it when the user asks you to "
+                "draw, generate, or show a picture. Write a detailed prompt: subject, style, "
+                "composition, lighting, colors."
+            ),
+            summary="Create pictures from a description",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "What the image should show"}
+                },
+                "required": ["prompt"],
+                "additionalProperties": False,
+            },
+            run=_generate_image,
         ),
     )
 }

@@ -1,6 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
+import type { ImageRef, Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
 import { normalizeCitations } from '../lib/citations'
+import GeneratedImages from './GeneratedImages'
 import SourcesList from './SourcesList'
 import ToolCallsView from './ToolCallsView'
 import { CheckIcon, CopyIcon, PencilIcon, RefreshIcon, ThumbDownIcon, ThumbUpIcon } from './icons'
@@ -34,6 +35,8 @@ interface Props {
   /** Tools the model ran, with labels from the tool list. */
   toolCalls?: ToolTrace[] | null
   toolInfo?: ToolInfo[]
+  /** Images generated for the reply. */
+  images?: ImageRef[] | null
   /** Omit for read-only views (shared chats, in-flight messages). */
   actions?: MessageActions
 }
@@ -187,6 +190,7 @@ function MessageBubble({
   sources,
   toolCalls,
   toolInfo,
+  images,
   actions,
 }: Props) {
   const [editing, setEditing] = useState(false)
@@ -246,6 +250,13 @@ function MessageBubble({
         </span>
       )}
       {toolCalls && toolCalls.length > 0 && <ToolCallsView calls={toolCalls} tools={toolInfo} />}
+      <GeneratedImages
+        images={images ?? []}
+        creating={
+          streaming &&
+          !!toolCalls?.some((c) => c.name === 'generate_image' && c.output === undefined)
+        }
+      />
       {content ? (
         <div className={streaming ? 'streaming-cursor' : undefined}>
           <Suspense fallback={<PlainText content={text} />}>
@@ -263,7 +274,7 @@ function MessageBubble({
         )
       )}
       {sources && sources.length > 0 && <SourcesList sources={sources} />}
-      {actions && (content || toolCalls?.length) && (
+      {actions && (content || toolCalls?.length || images?.length) && (
         <div className="flex flex-col gap-1">
           <div className="-ml-1.5 flex gap-0.5">
             <CopyButton text={text} />

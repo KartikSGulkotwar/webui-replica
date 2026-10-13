@@ -4,6 +4,7 @@ import ConnectionsPanel from '../components/admin/ConnectionsPanel'
 import DocumentsPanel from '../components/admin/DocumentsPanel'
 import EvaluationsPanel from '../components/admin/EvaluationsPanel'
 import GeneralPanel from '../components/admin/GeneralPanel'
+import ImagesPanel from '../components/admin/ImagesPanel'
 import ModelsPanel from '../components/admin/ModelsPanel'
 import UsersPanel from '../components/admin/UsersPanel'
 import WebSearchPanel from '../components/admin/WebSearchPanel'
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'models', label: 'Models', Panel: ModelsPanel },
   { id: 'documents', label: 'Documents', Panel: DocumentsPanel },
   { id: 'web-search', label: 'Web search', Panel: WebSearchPanel },
+  { id: 'images', label: 'Images', Panel: ImagesPanel },
   { id: 'evaluations', label: 'Evaluations', Panel: EvaluationsPanel },
   { id: 'analytics', label: 'Analytics', Panel: AnalyticsPanel },
   { id: 'general', label: 'General', Panel: GeneralPanel },

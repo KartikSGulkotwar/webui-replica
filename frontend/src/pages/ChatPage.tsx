@@ -11,7 +11,7 @@ import { MenuIcon, PlusIcon, XIcon } from '../components/icons'
 import MessageBubble, { type MessageActions } from '../components/MessageBubble'
 import ReplyGroup, { type ReplyColumn, type Vote } from '../components/ReplyGroup'
 import ToolsButton from '../components/ToolsButton'
-import WebSearchButton from '../components/WebSearchButton'
+import ComposerToggle, { GlobeIcon, ImageIcon } from '../components/ComposerToggle'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatAttachments } from '../hooks/useChatAttachments'
@@ -56,7 +56,14 @@ export default function ChatPage() {
   // Web search is switched on per message, like Open WebUI (not remembered).
   const [webSearchOn, setWebSearchOn] = useState(false)
   const canSearch = !!config.data?.web_search
-  const runOptions = { tools: activeTools, webSearch: canSearch && webSearchOn }
+  // Image: this message becomes a picture (per message, like web search).
+  const [imageOn, setImageOn] = useState(false)
+  const canImage = !!config.data?.image_generation
+  const runOptions = {
+    tools: activeTools,
+    webSearch: canSearch && webSearchOn,
+    image: canImage && imageOn,
+  }
   // System prompt chosen before the first message, when the chat doesn't exist yet.
   const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
   const attach = useChatAttachments(
@@ -176,6 +183,7 @@ export default function ChatPage() {
     content: m.content,
     sources: m.sources,
     toolCalls: m.tools,
+    images: m.images,
     rating: m.rating,
     actions: replyActions(m, group === lastGroup, group),
   })
@@ -188,6 +196,7 @@ export default function ChatPage() {
     error: r.status === 'error' ? r.error : undefined,
     sources: r.sources,
     toolCalls: r.tools,
+    images: r.images,
   })
   const renderGroup = (group: Message[], extra: ReplyColumn[] = []) => (
     <ReplyGroup
@@ -366,6 +375,7 @@ export default function ChatPage() {
                 model={label(m.model_id) ?? undefined}
                 sources={m.sources}
                 toolCalls={m.tools}
+                images={m.images}
                 toolInfo={toolList.data}
                 actions={replyActions(m, group === lastGroup, group)}
               />
@@ -382,6 +392,7 @@ export default function ChatPage() {
                 streaming={p.replies[0].status === 'streaming'}
                 sources={p.replies[0].sources}
                 toolCalls={p.replies[0].tools}
+                images={p.replies[0].images}
                 toolInfo={toolList.data}
               />
             ) : (
@@ -429,9 +440,24 @@ export default function ChatPage() {
               disabled={notFound}
             />
             {canSearch && (
-              <WebSearchButton
+              <ComposerToggle
                 on={webSearchOn}
                 onToggle={() => setWebSearchOn((v) => !v)}
+                label="Web search"
+                icon={<GlobeIcon />}
+                titleOn="Web search on: replies search the internet first"
+                titleOff="Search the web"
+                disabled={notFound}
+              />
+            )}
+            {canImage && (
+              <ComposerToggle
+                on={imageOn}
+                onToggle={() => setImageOn((v) => !v)}
+                label="Image"
+                icon={<ImageIcon />}
+                titleOn="Image on: your message is turned into a picture"
+                titleOff="Create an image"
                 disabled={notFound}
               />
             )}

@@ -9,6 +9,7 @@ import {
   type Attachment,
   type ChatStreamRequest,
   type ConversationDetail,
+  type ImageRef,
   type Source,
   type ToolTrace,
 } from '../types/api'
@@ -37,6 +38,8 @@ export interface PendingReply {
   sources?: Source[]
   /** Tools run so far, updated as calls start and finish. */
   tools?: ToolTrace[]
+  /** Images made for this reply. */
+  images?: ImageRef[]
 }
 
 /** The in-flight exchange, shown until the saved messages come back from the server. */
@@ -68,6 +71,8 @@ export interface RunOptions {
   tools?: string[]
   /** Search the web before answering. */
   webSearch?: boolean
+  /** Make an image from the message, then reply. */
+  image?: boolean
 }
 
 /** How many server messages there will be once this exchange is saved (replies
@@ -75,7 +80,7 @@ export interface RunOptions {
 export const expectedCount = (p: PendingExchange) =>
   p.baseCount +
   (p.kind === 'send' ? 1 : 0) +
-  p.replies.filter((r) => r.text !== '' || !!r.tools?.length).length
+  p.replies.filter((r) => r.text !== '' || !!r.tools?.length || !!r.images?.length).length
 
 const newReply = (modelId: string | null, slot: number | null): PendingReply => ({
   modelId,
@@ -209,6 +214,7 @@ export function useChatStream(conversationId: string | undefined) {
       if (others.length) body.model_ids = others
       if (options.tools?.length) body.tools = options.tools
       if (options.webSearch) body.web_search = true
+      if (options.image) body.image_generation = true
       if (action.kind === 'send') body.message = action.content
       if (action.kind === 'regenerate') {
         body.action = 'regenerate'
@@ -264,6 +270,8 @@ export function useChatStream(conversationId: string | undefined) {
                   t.id === result.id ? { ...t, output: result.output, error: result.error } : t,
                 ),
               }))
+            } else if ('images' in event) {
+              updateReply(i, (r) => ({ images: [...(r.images ?? []), ...event.images] }))
             } else if ('delta' in event) {
               updateReply(i, (r) => ({ text: r.text + event.delta }))
             } else if ('error' in event) {

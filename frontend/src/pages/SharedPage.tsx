@@ -52,6 +52,7 @@ export default function SharedPage() {
                   key={i}
                   role={m.role}
                   content={m.content}
+                  images={m.images}
                   model={
                     m.role === 'assistant' && m.model_id
                       ? {

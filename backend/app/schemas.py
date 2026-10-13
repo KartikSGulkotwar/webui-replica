@@ -135,6 +135,7 @@ class MessageRead(BaseModel):
     rating_comment: str | None = None
     sources: list["SourceRead"] | None = None
     tools: list["ToolTraceRead"] | None = None
+    images: list["ImageRef"] | None = None
     # Side-by-side replies: their column. Arena replies are `blind`, and their
     # model_id is hidden until the user votes.
     slot: int | None = None
@@ -149,6 +150,13 @@ class SourceRead(BaseModel):
     page: int | None
     text: str
     url: str | None = None
+
+
+class ImageRef(BaseModel):
+    """A generated image, served at /api/images/{id}."""
+
+    id: str
+    prompt: str
 
 
 class ToolTraceRead(BaseModel):
@@ -200,6 +208,7 @@ class SharedMessage(BaseModel):
     role: Role
     content: str
     model_id: str | None
+    images: list[ImageRef] | None = None
 
 
 class SharedChatRead(BaseModel):
@@ -229,6 +238,8 @@ class ChatStreamRequest(BaseModel):
     tools: list[str] = Field(default_factory=list, max_length=20)
     # Search the web before answering and cite the pages.
     web_search: bool = False
+    # Make an image from the message, then reply about it.
+    image_generation: bool = False
     params: ChatParams = Field(default_factory=ChatParams)
 
     @model_validator(mode="after")
@@ -320,6 +331,8 @@ class AppConfig(BaseModel):
     max_upload_mb: int
     # A search engine is set up, so chats can search the web.
     web_search: bool = False
+    # An image engine is set up, so chats can make images.
+    image_generation: bool = False
 
 
 # --- accounts -----------------------------------------------------------------
@@ -471,6 +484,27 @@ class WebSearchSettingsUpdate(BaseModel):
     result_count: int = Field(default=3, ge=1, le=10)
     # Omit/null to keep the stored key, "" to remove it.
     api_key: str | None = Field(default=None, max_length=1000)
+
+
+class ImageSettingsRead(BaseModel):
+    engine: Literal["", "pollinations", "openai", "automatic1111"]
+    base_url: str
+    model: str
+    size: str
+    has_key: bool
+
+
+class ImageSettingsUpdate(BaseModel):
+    engine: Literal["", "pollinations", "openai", "automatic1111"]
+    base_url: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=200)
+    size: Literal["512x512", "768x768", "1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
+    # Omit/null to keep the stored key, "" to remove it.
+    api_key: str | None = Field(default=None, max_length=1000)
+
+
+class ImageTest(BaseModel):
+    prompt: str = Field(default="A lighthouse on a cliff at sunset", min_length=1, max_length=500)
 
 
 class WebSearchTest(BaseModel):

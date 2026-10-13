@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { Rating, Source, ToolInfo, ToolTrace } from '../types/api'
+import type { ImageRef, Rating, Source, ToolInfo, ToolTrace } from '../types/api'
 import MessageBubble, { type MessageActions } from './MessageBubble'
 
 export interface ReplyColumn {
@@ -12,6 +12,7 @@ export interface ReplyColumn {
   error?: string
   sources?: Source[] | null
   toolCalls?: ToolTrace[] | null
+  images?: ImageRef[] | null
   rating?: Rating | null
   actions?: MessageActions
 }
@@ -100,6 +101,7 @@ export default function ReplyGroup({ columns, toolInfo, blind, onVote, voting }:
                 sources={c.sources}
                 toolCalls={c.toolCalls}
                 toolInfo={toolInfo}
+                images={c.images}
                 // In the arena the vote stands in for 👍/👎 until it's cast.
                 actions={blind && !revealed ? undefined : c.actions}
               />

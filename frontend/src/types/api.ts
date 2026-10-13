@@ -69,11 +69,18 @@ export interface Message {
   sources?: Source[] | null
   /** Tools the model ran while writing the reply. */
   tools?: ToolTrace[] | null
+  /** Images generated for the reply. */
+  images?: ImageRef[] | null
   /** Side-by-side replies to one message: their column (0, 1, …). */
   slot?: number | null
   /** Arena reply: model_id stays null until the user votes. */
   blind?: boolean
   created_at: string
+}
+
+export interface ImageRef {
+  id: string
+  prompt: string
 }
 
 export interface ToolTrace {
@@ -179,7 +186,7 @@ export interface ShareInfo {
 
 export interface SharedChat {
   title: string
-  messages: { role: Role; content: string; model_id: string | null }[]
+  messages: { role: Role; content: string; model_id: string | null; images?: ImageRef[] | null }[]
   updated_at: string
 }
 
@@ -203,6 +210,8 @@ export type StreamEvent = ReplyTag &
     | { tool_call: { id: string; name: string; arguments: unknown } }
     | { tool_result: { id: string; output: string; error: boolean } }
     | { delta: string }
+    /** Images made for the reply (Image toggle or the generate_image tool). */
+    | { images: ImageRef[] }
     /** model_id is set when a different model answered (refusal fallback). An
      * untagged {done: true} ends a side-by-side turn. */
     | { done: true; usage?: Usage | null; message_id?: number | null; model_id?: string }
@@ -220,6 +229,7 @@ export interface ChatStreamRequest {
   message_id?: number
   tools?: string[]
   web_search?: boolean
+  image_generation?: boolean
 }
 
 export interface Provider {
@@ -263,6 +273,8 @@ export interface AppConfig {
   max_upload_mb: number
   /** A search engine is set up, so chats can search the web. */
   web_search?: boolean
+  /** An image engine is set up, so chats can make images. */
+  image_generation?: boolean
 }
 
 export type UserRole = 'admin' | 'user' | 'pending'
@@ -362,4 +374,14 @@ export interface UsageReport {
     likes: number
     dislikes: number
   }[]
+}
+
+export type ImageEngine = '' | 'pollinations' | 'openai' | 'automatic1111'
+
+export interface ImageSettings {
+  engine: ImageEngine
+  base_url: string
+  model: string
+  size: string
+  has_key: boolean
 }

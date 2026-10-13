@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Column, ForeignKey, String, Text
+from sqlalchemy import Column, ForeignKey, LargeBinary, String, Text
 from sqlmodel import Field, SQLModel
 
 from app.rag.vector import Embedding
@@ -72,6 +72,8 @@ class Message(SQLModel, table=True):
     sources_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     # Tools the model ran while writing this reply (JSON list), shown with it.
     tools_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Images generated for this reply (JSON list of {"id", "prompt"}).
+    images_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     # Token usage reported by the provider (summed over tool-calling rounds).
     prompt_tokens: int | None = Field(default=None)
     completion_tokens: int | None = Field(default=None)
@@ -291,3 +293,22 @@ class Memory(SQLModel, table=True):
     content: str = Field(sa_column=Column(Text, nullable=False))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class GeneratedImage(SQLModel, table=True):
+    """An image made by the image engine. Kept in the database because serverless
+    hosts have no lasting disk; served only to its owner (and in shared chats)."""
+
+    __tablename__ = "generated_images"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    owner_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    conversation_id: str | None = Field(default=None, max_length=32, index=True)
+    prompt: str = Field(sa_column=Column(Text, nullable=False))
+    mime: str = Field(max_length=50)
+    data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    created_at: datetime = Field(default_factory=utcnow)

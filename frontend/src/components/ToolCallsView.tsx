@@ -5,6 +5,7 @@ import type { ToolInfo, ToolTrace } from '../types/api'
 // Steps the server runs itself (not from the tools menu) still need a label.
 const BUILT_IN: Record<string, Pick<ToolInfo, 'label' | 'emoji'>> = {
   web_search: { label: 'Web search', emoji: '🔎' },
+  generate_image: { label: 'Image', emoji: '🎨' },
 }
 
 /** The tools a reply used, in order; click one to see its input and output. */
