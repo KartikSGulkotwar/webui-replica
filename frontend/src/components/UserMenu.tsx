@@ -43,6 +43,9 @@ export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
           <Link to="/account" onClick={go} className={item} role="menuitem">
             Account
           </Link>
+          <Link to="/memory" onClick={go} className={item} role="menuitem">
+            Memory
+          </Link>
           <Link to="/archived" onClick={go} className={item} role="menuitem">
             Archived chats
           </Link>

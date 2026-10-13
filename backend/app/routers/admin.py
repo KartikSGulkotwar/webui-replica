@@ -15,6 +15,7 @@ from app.models import (
     Document,
     DocumentChunk,
     KnowledgeCollection,
+    Memory,
     Message,
     ModelSetting,
     OAuthAccount,
@@ -100,6 +101,7 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     session.exec(delete(CustomModel).where(CustomModel.owner_id == user.id))
     session.exec(delete(Conversation).where(Conversation.owner_id == user.id))
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
+    session.exec(delete(Memory).where(Memory.owner_id == user.id))
     session.delete(user)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

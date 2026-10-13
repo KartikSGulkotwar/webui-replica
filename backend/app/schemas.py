@@ -355,6 +355,26 @@ class ProfileUpdate(BaseModel):
     new_password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+class MemoryRead(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryWrite(BaseModel):
+    content: str = Field(min_length=1, max_length=1000)
+
+
+class MemoryList(BaseModel):
+    enabled: bool
+    memories: list[MemoryRead]
+
+
+class MemorySettings(BaseModel):
+    enabled: bool
+
+
 class AdminUserUpdate(BaseModel):
     role: UserRole
 

@@ -194,6 +194,8 @@ export function useChatStream(conversationId: string | undefined) {
               )
             } else if ('tool_result' in event) {
               const result = event.tool_result
+              // The model may have saved a memory: keep the Memory page current.
+              if (!result.error) queryClient.invalidateQueries({ queryKey: ['memories'] })
               setPending((p) =>
                 p && p.conversationId === id
                   ? {

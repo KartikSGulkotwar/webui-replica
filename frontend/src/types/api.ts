@@ -297,3 +297,16 @@ export interface CustomModel extends Omit<CustomModelInput, 'knowledge_ids'> {
   created_at: string
   updated_at: string
 }
+
+export interface MemoryItem {
+  id: number
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface MemoryList {
+  /** Memories are used in this user's chats. */
+  enabled: boolean
+  memories: MemoryItem[]
+}

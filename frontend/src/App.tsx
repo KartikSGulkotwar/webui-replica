@@ -12,6 +12,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ArchivedPage = lazy(() => import('./pages/ArchivedPage'))
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'))
+const MemoryPage = lazy(() => import('./pages/MemoryPage'))
 const ModelsPage = lazy(() => import('./pages/ModelsPage'))
 
 function Lazy({ children }: { children: ReactNode }) {
@@ -61,6 +62,14 @@ export default function App() {
             element={
               <Lazy>
                 <ModelsPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/memory"
+            element={
+              <Lazy>
+                <MemoryPage />
               </Lazy>
             }
           />

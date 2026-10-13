@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
+import sqlalchemy as sa
 from sqlalchemy import Column, ForeignKey, String, Text
 from sqlmodel import Field, SQLModel
 
@@ -101,6 +102,10 @@ class User(SQLModel, table=True):
     is_guest: bool = Field(default=False)
     # Part of every session token; bumping it signs the user out everywhere.
     session_version: int = Field(default=0)
+    # Use the user's saved memories in their chats (Account → Memory).
+    memory_enabled: bool = Field(
+        default=True, sa_column_kwargs={"server_default": sa.true(), "nullable": False}
+    )
     created_at: datetime = Field(default_factory=utcnow)
     last_active_at: datetime = Field(default_factory=utcnow)
 
@@ -259,5 +264,21 @@ class CustomModel(SQLModel, table=True):
     )
     # "private": only the creator; "public": every approved user (admins only).
     visibility: str = Field(default="private", max_length=20)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class Memory(SQLModel, table=True):
+    """A fact about a user that their chats can use ("I prefer Python")."""
+
+    __tablename__ = "memories"
+
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    content: str = Field(sa_column=Column(Text, nullable=False))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

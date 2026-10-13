@@ -589,10 +589,12 @@ def test_chat_endpoint_offers_selected_tools(client, session, conv) -> None:
 
 @respx.mock
 def test_admin_can_disable_tools(client, user_client, session) -> None:
+    # web_search is enabled but hidden: no search engine is set up.
     assert [t["id"] for t in user_client.get("/api/tools").json()] == [
         "calculator",
         "current_time",
         "fetch_url",
+        "add_memory",
     ]
     client.put(
         "/api/admin/settings",
@@ -600,7 +602,7 @@ def test_admin_can_disable_tools(client, user_client, session) -> None:
     )
     assert [t["id"] for t in user_client.get("/api/tools").json()] == ["calculator"]
     # Admins can still see every tool to switch them back on; users can't.
-    assert len(client.get("/api/tools?all=true").json()) == 4
+    assert len(client.get("/api/tools?all=true").json()) == 5
     assert len(user_client.get("/api/tools?all=true").json()) == 1
     # Updating other settings keeps the tool list.
     client.put("/api/admin/settings", json={"enable_signup": False, "default_user_role": "user"})

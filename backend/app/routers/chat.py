@@ -13,6 +13,7 @@ from app.app_settings import usable_tools
 from app.auth import ActiveUserDep
 from app.catalog import resolve_model
 from app.db import SessionDep
+from app.memory import memory_context, relevant_memories
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
 from app.providers.base import BaseProvider, ProviderError, RefusalError
 from app.providers.registry import RegistryDep
@@ -324,6 +325,14 @@ async def chat_stream(
     ]
     for i, prompt in enumerate(prompts):
         history.insert(i, ChatMessage(role="system", content=prompt))
+    lead = len(prompts)  # where context blocks go: after the instructions
+    question = next((m.content for m in reversed(history) if m.role == "user"), "")
+
+    # Memory: facts the user asked to be remembered, for every chat of theirs.
+    memories = await run_in_threadpool(relevant_memories, session, user, question)
+    if memories:
+        history.insert(lead, ChatMessage(role="system", content=memory_context(memories)))
+        lead += 1
 
     # Retrieval: ground the reply in the chat's attached documents and the
     # custom model's knowledge bases (which belong to the model's creator).
@@ -335,12 +344,11 @@ async def chat_stream(
         )
     document_ids = list(dict.fromkeys(document_ids))
     if document_ids:
-        question = next((m.content for m in reversed(history) if m.role == "user"), "")
         config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
         found = await retrieve(session, request.app.state.http, config, document_ids, question)
         if found:
             sources = sources_payload(found)
-            history.insert(len(prompts), ChatMessage(role="system", content=build_context(found)))
+            history.insert(lead, ChatMessage(role="system", content=build_context(found)))
 
     # Tools: what this turn asked for plus the custom model's defaults, limited
     # to the ones an admin has enabled (and that are set up).
@@ -362,7 +370,12 @@ async def chat_stream(
             body.params,
             sources,
             tools,
-            ToolContext(http=request.app.state.http, web_search=search_config),
+            ToolContext(
+                http=request.app.state.http,
+                web_search=search_config,
+                engine=request.app.state.engine,
+                user_id=user.id,
+            ),
             search_config if body.web_search else None,
             request.app.state.http,
         ),

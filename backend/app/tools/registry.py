@@ -7,7 +7,12 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import Engine
+from sqlmodel import Session
 
+from app.memory import add_memory
+from app.models import User
 from app.tools.calculator import CalculatorError, calculate
 from app.tools.web import FetchError, fetch_text
 from app.websearch.engines import SearchError, WebSearchConfig, search
@@ -24,6 +29,9 @@ class ToolInputError(ValueError):
 class ToolContext:
     http: httpx.AsyncClient
     web_search: WebSearchConfig | None = None
+    # For tools that act on the signed-in user's data (memory).
+    engine: Engine | None = None
+    user_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -89,6 +97,29 @@ async def _web_search(args: dict[str, Any], ctx: ToolContext) -> str:
     except SearchError as exc:
         raise ToolInputError(str(exc)) from exc
     return results_text(results)
+
+
+def _save_memory(engine: Engine, user_id: str, content: str) -> str:
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if user is None:
+            raise ToolInputError("No signed-in user")
+        if not user.memory_enabled:
+            raise ToolInputError(
+                "The user has turned memory off. Tell them they can turn it on under Memory."
+            )
+        try:
+            memory = add_memory(session, user_id, content)
+        except ValueError as exc:  # empty, or the limit is reached
+            raise ToolInputError(str(exc)) from exc
+        return f"Saved to memory: {memory.content}"
+
+
+async def _add_memory(args: dict[str, Any], ctx: ToolContext) -> str:
+    content = _string_arg(args, "content", max_len=1000) or ""
+    if ctx.engine is None or ctx.user_id is None:
+        raise ToolInputError("Memory isn't available here")
+    return await run_in_threadpool(_save_memory, ctx.engine, ctx.user_id, content)
 
 
 TOOLS: dict[str, Tool] = {
@@ -171,6 +202,28 @@ TOOLS: dict[str, Tool] = {
                 "additionalProperties": False,
             },
             run=_web_search,
+        ),
+        Tool(
+            id="add_memory",
+            label="Memory",
+            emoji="🧠",
+            description=(
+                "Save a short fact about the user for future conversations. Use it when the user "
+                "asks you to remember something, or shares a lasting preference or detail about "
+                "themselves (name, job, tools they use, how they like answers). Write it in the "
+                "third person, e.g. 'Prefers Python for scripting'. Don't save secrets or "
+                "one-off details."
+            ),
+            summary="Remember things you tell it for future chats",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "The fact, in one sentence"}
+                },
+                "required": ["content"],
+                "additionalProperties": False,
+            },
+            run=_add_memory,
         ),
     )
 }
