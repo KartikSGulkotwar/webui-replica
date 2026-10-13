@@ -116,7 +116,14 @@ async def generate(http: httpx.AsyncClient, config: ImageConfig, prompt: str) ->
             # The free tier allows one image every few seconds per address and
             # answers 402/429 in between: wait and try again.
             for pause in (*POLLINATIONS_RETRY_PAUSES, None):
-                resp = await http.get(url, params=params, timeout=TIMEOUT, follow_redirects=True)
+                resp = await http.get(
+                    url,
+                    params=params,
+                    # An optional token (auth.pollinations.ai) raises the rate limit.
+                    headers={"Authorization": f"Bearer {config.api_key}"} if config.api_key else {},
+                    timeout=TIMEOUT,
+                    follow_redirects=True,
+                )
                 if resp.status_code not in (402, 429) or pause is None:
                     break
                 await asyncio.sleep(pause)

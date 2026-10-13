@@ -65,6 +65,9 @@ async def test_pollinations(http) -> None:
     request = route.calls.last.request
     assert "/prompt/a%20red%20fox?" in str(request.url)
     assert request.url.params["width"] == "512" and request.url.params["nologo"] == "true"
+    assert "Authorization" not in request.headers
+    await generate(http, ImageConfig("pollinations", api_key="tok"), "a red fox")
+    assert route.calls.last.request.headers["Authorization"] == "Bearer tok"
 
 
 @respx.mock

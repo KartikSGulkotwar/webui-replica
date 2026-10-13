@@ -16,7 +16,7 @@ const ENGINES: Record<
 > = {
   pollinations: {
     label: 'Pollinations (free, no key)',
-    hint: 'Free public service, no account needed. Adds a small watermark; fine for demos.',
+    hint: 'Free public service, no account needed (about one image every 15–20 seconds per server). Adds a small watermark. A free token from auth.pollinations.ai raises the limit.',
   },
   openai: {
     label: 'OpenAI-compatible',
@@ -78,6 +78,12 @@ function ImagesForm({ data }: { data: ImageSettings }) {
   })
   const test = useMutation({ mutationFn: () => testImage(prompt) })
   const needsUrl = engine === 'openai' || engine === 'automatic1111'
+  const keyLabel =
+    engine === 'openai'
+      ? 'API key'
+      : engine === 'pollinations'
+        ? 'Token (optional, for higher limits)'
+        : 'Login (user:password, optional)'
 
   return (
     <>
@@ -166,29 +172,33 @@ function ImagesForm({ data }: { data: ImageSettings }) {
                 />
               </div>
             )}
-            <div className="sm:col-span-2">
-              <label htmlFor="img-key" className="mb-1 block text-sm font-medium">
-                {engine === 'openai' ? 'API key' : 'Login (user:password, optional)'}
-              </label>
-              <input
-                id="img-key"
-                type="password"
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={
-                  data.has_key
-                    ? 'Saved — leave blank to keep it'
-                    : engine === 'openai'
-                      ? 'sk-…'
+          </div>
+        )}
+        {engine && (
+          <div>
+            <label htmlFor="img-key" className="mb-1 block text-sm font-medium">
+              {keyLabel}
+            </label>
+            <input
+              id="img-key"
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={
+                data.has_key
+                  ? 'Saved — leave blank to keep it'
+                  : engine === 'openai'
+                    ? 'sk-…'
+                    : engine === 'pollinations'
+                      ? 'Leave blank to use the free anonymous tier'
                       : 'Only if started with --api-auth'
-                }
-                className={input}
-              />
-              <p className="mt-1 text-xs text-zinc-500">
-                Encrypted before it is stored and never sent back to the browser.
-              </p>
-            </div>
+              }
+              className={input}
+            />
+            <p className="mt-1 text-xs text-zinc-500">
+              Encrypted before it is stored and never sent back to the browser.
+            </p>
           </div>
         )}
         {save.error && <p className="text-sm text-red-500">{errorMessage(save.error)}</p>}
