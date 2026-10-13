@@ -11,6 +11,10 @@ interface Props {
   onSelect: (id: string) => void
   /** Only admins can fix providers, so only they get links to the admin panel. */
   isAdmin: boolean
+  /** Models (and their groups) this menu leaves out. */
+  exclude?: (m: ModelInfo) => boolean
+  /** Accessible name of the button, e.g. "Second model". */
+  label?: string
 }
 
 function HealthDot({ ok }: { ok: boolean }) {
@@ -29,6 +33,8 @@ export default function ModelSelector({
   selected,
   onSelect,
   isAdmin,
+  exclude,
+  label: buttonLabel,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -53,15 +59,18 @@ export default function ModelSelector({
   const groups = useMemo(() => {
     if (!data) return []
     const q = query.trim().toLowerCase()
-    return data.providers.map((provider) => ({
-      provider,
-      models: data.models.filter(
-        (m) =>
-          m.provider_id === provider.id &&
-          (!q || m.name.toLowerCase().includes(q) || !!m.description?.toLowerCase().includes(q)),
-      ),
-    }))
-  }, [data, query])
+    const allowed = exclude ? data.models.filter((m) => !exclude(m)) : data.models
+    return data.providers
+      .filter((p) => allowed.some((m) => m.provider_id === p.id) || !exclude)
+      .map((provider) => ({
+        provider,
+        models: allowed.filter(
+          (m) =>
+            m.provider_id === provider.id &&
+            (!q || m.name.toLowerCase().includes(q) || !!m.description?.toLowerCase().includes(q)),
+        ),
+      }))
+  }, [data, query, exclude])
 
   const selectedProvider = data?.providers.find((p) => p.id === selected?.provider_id)
 
@@ -90,6 +99,7 @@ export default function ModelSelector({
         className="flex min-w-0 max-w-[60vw] items-center gap-2 rounded-lg px-3 py-1.5 text-sm hover:bg-zinc-100 disabled:cursor-wait dark:hover:bg-zinc-800 sm:max-w-md"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={buttonLabel}
       >
         {label}
         <ChevronDownIcon className="shrink-0 text-zinc-500" />

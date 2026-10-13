@@ -1,6 +1,10 @@
+import asyncio
 import json
 import logging
+import random
+import threading
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,13 +13,13 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from app.app_settings import usable_tools
+from app.app_settings import get_admin_settings, usable_tools
 from app.auth import ActiveUserDep
-from app.catalog import resolve_model
+from app.catalog import ARENA_MODEL_ID, ResolvedModel, resolve_model
 from app.db import SessionDep
 from app.memory import memory_context, relevant_memories
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
-from app.providers.base import BaseProvider, ProviderError, RefusalError
+from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
 from app.providers.registry import RegistryDep
 from app.rag.service import (
     Source,
@@ -43,6 +47,7 @@ MAX_TOOL_ROUNDS = 5
 # How much of a tool's output is shown with the reply (the model gets more).
 TRACE_OUTPUT_CHARS = 2000
 TITLE_MAX_CHARS = 60
+MAX_MODELS = 3  # side by side
 
 
 def make_title(text: str) -> str:
@@ -60,6 +65,10 @@ def sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+_sse = sse  # stream_and_persist shadows it with a tagging version
+_save_lock = threading.Lock()
+
+
 def save_assistant_message(
     engine: Engine,
     conversation_id: str,
@@ -67,8 +76,12 @@ def save_assistant_message(
     content: str,
     sources: list[dict] | None = None,
     tools: list[dict] | None = None,
+    usage: dict | None = None,
+    slot: int | None = None,
+    blind: bool = False,
 ) -> int | None:
-    with Session(engine) as session:
+    # Side-by-side replies can finish together; SQLite allows one writer at a time.
+    with _save_lock, Session(engine) as session:
         conversation = session.get(Conversation, conversation_id)
         if conversation is None:  # deleted while streaming
             return None
@@ -79,12 +92,70 @@ def save_assistant_message(
             model_id=model_id,
             sources_json=json.dumps(sources) if sources else None,
             tools_json=json.dumps(tools) if tools else None,
+            prompt_tokens=(usage or {}).get("prompt_tokens"),
+            completion_tokens=(usage or {}).get("completion_tokens"),
+            slot=slot,
+            blind=blind,
         )
         conversation.updated_at = utcnow()
         session.add(message)
         session.add(conversation)
         session.commit()
         return message.id
+
+
+@dataclass(frozen=True)
+class WebStep:
+    """What a web search adds to a reply: its step, the excerpts, and their sources."""
+
+    trace: dict
+    context: ChatMessage
+    sources: list[dict]
+
+
+async def web_search_step(
+    provider: BaseProvider,
+    model: str,
+    messages: list[ChatMessage],
+    http: httpx.AsyncClient,
+    config: WebSearchConfig,
+    first_n: int = 1,
+) -> AsyncIterator[dict | WebStep]:
+    """Search before answering. Yields the step's events as it goes (it shows like
+    a tool call), then a WebStep with what the reply should see."""
+    query = await make_search_query(provider, model, messages)
+    step = {"id": "web_search", "name": "web_search", "arguments": {"query": query}}
+    yield {"tool_call": step}
+    question = next((m.content for m in reversed(messages) if m.role == "user"), "")
+    found: list[Source] = []
+    try:
+        results = await search(http, config, query)
+        found = await web_sources(http, results, question, first_n=first_n)
+        pages = list(dict.fromkeys(s.url for s in found))
+        plural = "" if len(pages) == 1 else "s"
+        output = f"Read {len(pages)} page{plural}\n" + "\n".join(p or "" for p in pages)
+        error = False
+        if not found:
+            output = "No results."
+    except SearchError as exc:
+        output, error = str(exc), True
+    yield {"tool_result": {"id": step["id"], "output": output, "error": error}}
+    if found:
+        context = ChatMessage(role="system", content=build_context(found))
+    else:
+        context = ChatMessage(
+            role="system",
+            content=(
+                "A web search for this message found nothing usable"
+                + (f" ({output})" if error else "")
+                + ". Say so briefly, then answer from what you know."
+            ),
+        )
+    yield WebStep(
+        trace={**step, "output": output, "error": error},
+        context=context,
+        sources=sources_payload(found),
+    )
 
 
 async def stream_and_persist(
@@ -100,6 +171,11 @@ async def stream_and_persist(
     tool_context: ToolContext | None = None,
     web_search: WebSearchConfig | None = None,
     http: httpx.AsyncClient | None = None,
+    *,
+    tag: dict | None = None,
+    slot: int | None = None,
+    blind: bool = False,
+    trace_prefix: list[dict] | None = None,
 ) -> AsyncIterator[str]:
     """Relay provider chunks as normalized SSE and save the assistant reply.
 
@@ -111,10 +187,24 @@ async def stream_and_persist(
     error, or when the client disconnects (Stop button), so partial answers
     survive a refresh. Nothing is saved if nothing was produced, or if the
     model declined (a refusal's partial text is discarded).
+
+    Side-by-side replies pass `tag` (added to every event, e.g. {"reply": 1}),
+    their `slot`, and steps already shown for them (`trace_prefix`).
     """
     parts: list[str] = []
-    trace: list[dict] = []  # tool calls and their results, shown with the reply
+    # Tool calls and their results, shown with the reply.
+    trace: list[dict] = list(trace_prefix or [])
     saved = False
+    usage: dict[str, int] = {}
+
+    def sse(payload: dict) -> str:
+        return _sse({**payload, **tag} if tag else payload)
+
+    def add_usage(more: dict | None) -> None:
+        for key in ("prompt_tokens", "completion_tokens"):
+            if isinstance((more or {}).get(key), int):
+                usage[key] = usage.get(key, 0) + more[key]  # type: ignore[index]
+
     specs = [
         ToolSpec(name=t.id, description=t.description, parameters=t.parameters) for t in tools or []
     ]
@@ -129,47 +219,32 @@ async def stream_and_persist(
         content = "".join(parts)
         if not content.strip() and not trace:
             return None
-        return save_assistant_message(engine, conversation_id, answered_by, content, sources, trace)
+        return save_assistant_message(
+            engine,
+            conversation_id,
+            answered_by,
+            content,
+            sources,
+            trace,
+            usage or None,
+            slot,
+            blind,
+        )
 
     messages = list(history)
     sources = list(sources or [])
     try:
         if web_search is not None and http is not None:
-            # Search before answering; shown as a step like a tool call.
-            query = await make_search_query(provider, model, messages)
-            step = {"id": "web_search", "name": "web_search", "arguments": {"query": query}}
-            yield sse({"tool_call": step})
-            question = next((m.content for m in reversed(messages) if m.role == "user"), "")
-            found: list[Source] = []
-            try:
-                results = await search(http, web_search, query)
-                found = await web_sources(http, results, question, first_n=len(sources) + 1)
-                pages = list(dict.fromkeys(s.url for s in found))
-                plural = "" if len(pages) == 1 else "s"
-                output = f"Read {len(pages)} page{plural}\n" + "\n".join(p or "" for p in pages)
-                error = False
-                if not found:
-                    output = "No results."
-            except SearchError as exc:
-                output, error = str(exc), True
-            trace.append({**step, "output": output, "error": error})
-            yield sse({"tool_result": {"id": step["id"], "output": output, "error": error}})
-            lead = next((i for i, m in enumerate(messages) if m.role != "system"), len(messages))
-            if found:
-                sources += sources_payload(found)
-                messages.insert(lead, ChatMessage(role="system", content=build_context(found)))
-            else:
-                messages.insert(
-                    lead,
-                    ChatMessage(
-                        role="system",
-                        content=(
-                            "A web search for this message found nothing usable"
-                            + (f" ({output})" if error else "")
-                            + ". Say so briefly, then answer from what you know."
-                        ),
-                    ),
-                )
+            async for item in web_search_step(
+                provider, model, messages, http, web_search, first_n=len(sources) + 1
+            ):
+                if isinstance(item, WebStep):
+                    trace.append(item.trace)
+                    sources += item.sources
+                    lead = next((i for i, m in enumerate(messages) if m.role != "system"), 0)
+                    messages.insert(lead, item.context)
+                else:
+                    yield sse(item)
         if sources:
             # Sent before the text so the citations can be shown while the answer streams.
             yield sse({"sources": sources})
@@ -193,6 +268,7 @@ async def stream_and_persist(
                 raise ProviderError("The model stopped without finishing its reply")
             if final.served_by:
                 answered_by = f"{provider.id}:{final.served_by}"
+            add_usage(final.usage)
 
             if not final.tool_calls:
                 message_id = await run_in_threadpool(save)
@@ -202,7 +278,7 @@ async def stream_and_persist(
                     yield sse({"error": "The model returned an empty reply. Try again."})
                     return
                 done: dict = {"done": True, "usage": final.usage, "message_id": message_id}
-                if final.served_by:
+                if final.served_by and not blind:
                     done["model_id"] = answered_by
                 yield sse(done)
                 return
@@ -264,6 +340,147 @@ async def stream_and_persist(
             save()
 
 
+def thread_for(messages: list[Message], model_id: str) -> list[ChatMessage]:
+    """The conversation as `model_id` should see it. Where a message got several
+    replies side by side, each model continues from its own reply (or the first
+    one, if it wasn't among them)."""
+    out: list[ChatMessage] = []
+    i = 0
+    while i < len(messages):
+        if messages[i].role != "assistant":
+            out.append(ChatMessage(role=messages[i].role, content=messages[i].content))  # type: ignore[arg-type]
+            i += 1
+            continue
+        group = []
+        while i < len(messages) and messages[i].role == "assistant":
+            group.append(messages[i])
+            i += 1
+        own = next((m for m in group if m.model_id == model_id), None)
+        first = min(group, key=lambda m: (m.slot or 0, m.id or 0))
+        out.append(ChatMessage(role="assistant", content=(own or first).content))
+    return out
+
+
+async def merge(streams: list[AsyncIterator[str]]) -> AsyncIterator[str]:
+    """Interleave several event streams as their events arrive."""
+    queue: asyncio.Queue = asyncio.Queue()
+    finished = object()
+
+    async def pump(stream: AsyncIterator[str]) -> None:
+        try:
+            async for event in stream:
+                await queue.put(event)
+        finally:
+            queue.put_nowait(finished)
+
+    tasks = [asyncio.create_task(pump(s)) for s in streams]
+    try:
+        remaining = len(tasks)
+        while remaining:
+            event = await queue.get()
+            if event is finished:
+                remaining -= 1
+            else:
+                yield event
+        await asyncio.gather(*tasks)  # surfaces unexpected errors
+    finally:
+        # Client went away: stop the other replies (each saves what it has).
+        for task in tasks:
+            task.cancel()
+
+
+@dataclass(frozen=True)
+class Target:
+    """One model answering the message."""
+
+    model_id: str  # as chosen in the menu
+    resolved: ResolvedModel
+    provider: BaseProvider
+
+
+@dataclass(frozen=True)
+class Prepared:
+    history: list[ChatMessage]
+    sources: list[dict]
+    tools: list[Tool]
+
+
+async def side_by_side(
+    engine: Engine,
+    conversation_id: str,
+    targets: list[Target],
+    prepared: list[Prepared],
+    params: ChatParams,
+    tool_context: ToolContext,
+    web_search: WebSearchConfig | None,
+    http: httpx.AsyncClient,
+    blind: bool,
+) -> AsyncIterator[str]:
+    """Several models answer the same message at once. Every event names its
+    reply ({"reply": i}); a final untagged {"done": true} ends the turn."""
+    yield sse(
+        {
+            "replies": [
+                {"model_id": None if blind else t.model_id, "slot": i}
+                for i, t in enumerate(targets)
+            ],
+            "blind": blind,
+        }
+    )
+    # One web search, shared by every reply.
+    step: WebStep | None = None
+    if web_search is not None:
+        first_n = 1 + max(len(p.sources) for p in prepared)
+        lead = targets[0]
+        async for item in web_search_step(
+            lead.provider, lead.resolved.model, prepared[0].history, http, web_search, first_n
+        ):
+            if isinstance(item, WebStep):
+                step = item
+            else:
+                for i in range(len(targets)):
+                    yield sse({**item, "reply": i})
+    streams = []
+    for i, (t, p) in enumerate(zip(targets, prepared, strict=True)):
+        history = list(p.history)
+        if step is not None:
+            at = next((k for k, m in enumerate(history) if m.role != "system"), 0)
+            history.insert(at, step.context)
+        streams.append(
+            stream_and_persist(
+                engine,
+                t.provider,
+                conversation_id,
+                t.model_id,
+                t.resolved.model,
+                history,
+                params,
+                p.sources + (step.sources if step else []),
+                p.tools,
+                tool_context,
+                tag={"reply": i},
+                slot=i,
+                blind=blind,
+                trace_prefix=[step.trace] if step else None,
+            )
+        )
+    async for event in merge(streams):
+        yield event
+    yield sse({"done": True})
+
+
+def arena_pool(session: Session, settings, registry) -> list[str]:
+    """Arena models an admin chose whose providers are working."""
+    pool = []
+    for model_id in get_admin_settings(session, settings).arena_models:
+        try:
+            registry.get(split_model_id(model_id)[0])
+        except (ProviderError, ValueError):
+            continue
+        pool.append(model_id)
+    return pool
+
+
 @router.post("/stream", dependencies=[Depends(limit_chat)])
 async def chat_stream(
     body: ChatStreamRequest,
@@ -273,19 +490,44 @@ async def chat_stream(
     user: ActiveUserDep,
 ) -> StreamingResponse:
     # Validate everything we can before streaming so failures are plain HTTP errors.
-    # A custom model resolves to its base model plus its instructions/knowledge.
-    resolved = resolve_model(session, user, body.model_id)
-    provider_id, model = resolved.provider_id, resolved.model
-
+    settings, cipher = request.app.state.settings, request.app.state.cipher
     conversation = get_conversation_or_404(session, body.conversation_id, user)
-
     await run_in_threadpool(registry.sync, session)
-    try:
-        provider = registry.get(provider_id)
-    except ProviderError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Who answers: one model, several side by side, or two hidden arena models.
+    blind = body.model_id == ARENA_MODEL_ID
+    if blind:
+        pool = arena_pool(session, settings, registry)
+        if len(pool) < 2:
+            raise HTTPException(
+                status_code=400, detail="The arena needs at least two models (Admin → Evaluations)"
+            )
+        model_ids = random.sample(pool, 2)
+    else:
+        model_ids = list(dict.fromkeys([body.model_id, *body.model_ids]))
+        if ARENA_MODEL_ID in model_ids:
+            raise HTTPException(status_code=422, detail="The arena can't be combined with models")
+        if len(model_ids) > MAX_MODELS:
+            raise HTTPException(status_code=422, detail=f"Choose at most {MAX_MODELS} models")
+    if body.message_id is not None and body.action == "regenerate" and len(model_ids) > 1:
+        raise HTTPException(status_code=422, detail="Regenerate one reply with one model")
+    targets: list[Target] = []
+    for model_id in model_ids:
+        # A custom model resolves to its base model plus its instructions/knowledge.
+        # Arena models were chosen by an admin, so they may be hidden from the menu.
+        resolved = (
+            ResolvedModel(*split_model_id(model_id))
+            if blind
+            else resolve_model(session, user, model_id)
+        )
+        try:
+            provider = registry.get(resolved.provider_id)
+        except ProviderError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        targets.append(Target(model_id, resolved, provider))
 
     messages = list_messages(session, conversation.id)
+    slot = None  # regenerating one of several replies keeps its column
     if body.action == "send":
         # Persist the user message before calling the model.
         is_first = not any(m.role == "user" for m in messages)
@@ -293,12 +535,25 @@ async def chat_stream(
         if is_first and conversation.title == DEFAULT_TITLE:
             conversation.title = make_title(body.message or "")
     elif body.action == "regenerate":
-        # Replace the last reply (if there is one) with a new one, possibly from
-        # a different model.
-        if messages and messages[-1].role == "assistant":
-            session.delete(messages.pop())
-        if not messages or messages[-1].role != "user":
+        last_user = max((m.id or 0 for m in messages if m.role == "user"), default=None)
+        if last_user is None:
             raise HTTPException(status_code=400, detail="There's no message to reply to")
+        if body.message_id is not None:
+            # Replace one reply to the last message (the others stay).
+            reply = next(
+                (m for m in messages if m.id == body.message_id and m.role == "assistant"), None
+            )
+            if reply is None or (reply.id or 0) < last_user:
+                raise HTTPException(status_code=404, detail="Reply not found")
+            if reply.blind:
+                raise HTTPException(status_code=400, detail="Arena replies can't be regenerated")
+            slot = reply.slot
+            session.delete(reply)
+        else:
+            # Replace every reply to the last message, possibly with other models.
+            for m in messages:
+                if m.role == "assistant" and (m.id or 0) > last_user:
+                    session.delete(m)
     else:  # edit
         target = next((m for m in messages if m.id == body.message_id and m.role == "user"), None)
         if target is None:
@@ -313,72 +568,89 @@ async def chat_stream(
     session.add(conversation)
     session.commit()
 
-    history = [
-        ChatMessage(role=m.role, content=m.content)  # type: ignore[arg-type]
-        for m in list_messages(session, conversation.id)
-    ]
-    # Instructions, most general first: the custom model's, then this chat's.
-    prompts = [
-        p
-        for p in (resolved.persona and resolved.persona.system_prompt, conversation.system_prompt)
-        if p
-    ]
-    for i, prompt in enumerate(prompts):
-        history.insert(i, ChatMessage(role="system", content=prompt))
-    lead = len(prompts)  # where context blocks go: after the instructions
-    question = next((m.content for m in reversed(history) if m.role == "user"), "")
+    # Everything up to the message being answered (other replies to it excluded).
+    stored = list_messages(session, conversation.id)
+    last = max(i for i, m in enumerate(stored) if m.role == "user")
+    stored, question = stored[: last + 1], stored[last].content
 
-    # Memory: facts the user asked to be remembered, for every chat of theirs.
+    # Shared by every model: memory, attached documents, tools, web search.
     memories = await run_in_threadpool(relevant_memories, session, user, question)
-    if memories:
-        history.insert(lead, ChatMessage(role="system", content=memory_context(memories)))
-        lead += 1
-
-    # Retrieval: ground the reply in the chat's attached documents and the
-    # custom model's knowledge bases (which belong to the model's creator).
-    sources: list[dict] = []
-    document_ids = await run_in_threadpool(attached_document_ids, session, conversation.id, user.id)
-    if resolved.persona and resolved.knowledge_ids:
-        document_ids += await run_in_threadpool(
-            collection_document_ids, session, resolved.knowledge_ids, resolved.persona.owner_id
-        )
-    document_ids = list(dict.fromkeys(document_ids))
-    if document_ids:
-        config = embedding_config(session, request.app.state.settings, request.app.state.cipher)
-        found = await retrieve(session, request.app.state.http, config, document_ids, question)
-        if found:
-            sources = sources_payload(found)
-            history.insert(lead, ChatMessage(role="system", content=build_context(found)))
-
-    # Tools: what this turn asked for plus the custom model's defaults, limited
-    # to the ones an admin has enabled (and that are set up).
-    settings, cipher = request.app.state.settings, request.app.state.cipher
-    wanted = set(body.tools) | set(resolved.tool_ids)
-    tools = [t for t in usable_tools(session, settings, cipher) if t.id in wanted]
+    attached = await run_in_threadpool(attached_document_ids, session, conversation.id, user.id)
+    embeddings = embedding_config(session, settings, cipher)
+    available_tools = usable_tools(session, settings, cipher)
     search_config = web_search_config(session, settings, cipher)
     if body.web_search and not search_config.enabled:
         raise HTTPException(status_code=400, detail="Web search isn't set up on this server")
+    http: httpx.AsyncClient = request.app.state.http
 
-    return StreamingResponse(
-        stream_and_persist(
+    async def prepare(t: Target) -> Prepared:
+        persona = t.resolved.persona
+        # Instructions, most general first: the custom model's, then this chat's;
+        # then context blocks.
+        prefix = [
+            ChatMessage(role="system", content=p)
+            for p in (persona and persona.system_prompt, conversation.system_prompt)
+            if p
+        ]
+        if memories:
+            prefix.append(ChatMessage(role="system", content=memory_context(memories)))
+        # Retrieval: the chat's attached documents and the custom model's
+        # knowledge bases (which belong to the model's creator).
+        document_ids = list(attached)
+        if persona and t.resolved.knowledge_ids:
+            document_ids += await run_in_threadpool(
+                collection_document_ids, session, t.resolved.knowledge_ids, persona.owner_id
+            )
+        sources: list[dict] = []
+        if document_ids:
+            found = await retrieve(
+                session, http, embeddings, list(dict.fromkeys(document_ids)), question
+            )
+            if found:
+                sources = sources_payload(found)
+                prefix.append(ChatMessage(role="system", content=build_context(found)))
+        # Tools: what this turn asked for plus the custom model's defaults,
+        # limited to the ones an admin has enabled (and that are set up).
+        wanted = set(body.tools) | set(t.resolved.tool_ids)
+        tools = [x for x in available_tools if x.id in wanted]
+        return Prepared(prefix + thread_for(stored, t.model_id), sources, tools)
+
+    tool_context = ToolContext(
+        http=http, web_search=search_config, engine=request.app.state.engine, user_id=user.id
+    )
+    web = search_config if body.web_search else None
+    if len(targets) == 1:
+        t = targets[0]
+        p = await prepare(t)
+        stream = stream_and_persist(
             request.app.state.engine,
-            provider,
+            t.provider,
             conversation.id,
-            body.model_id,
-            model,
-            history,
+            t.model_id,
+            t.resolved.model,
+            p.history,
             body.params,
-            sources,
-            tools,
-            ToolContext(
-                http=request.app.state.http,
-                web_search=search_config,
-                engine=request.app.state.engine,
-                user_id=user.id,
-            ),
-            search_config if body.web_search else None,
-            request.app.state.http,
-        ),
+            p.sources,
+            p.tools,
+            tool_context,
+            web,
+            http,
+            slot=slot,
+        )
+    else:
+        stream = side_by_side(
+            request.app.state.engine,
+            conversation.id,
+            targets,
+            [await prepare(t) for t in targets],
+            body.params,
+            tool_context,
+            web,
+            http,
+            blind,
+        )
+    return StreamingResponse(
+        stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

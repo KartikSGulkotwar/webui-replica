@@ -53,3 +53,10 @@ export const getSharedChat = (shareId: string) =>
 
 export const exportAllConversations = () =>
   apiFetch<ConversationDetail[]>('/api/conversations/export')
+
+/** Rate several replies at once, e.g. an arena vote ({A: 1, B: -1}); returns the messages. */
+export const rateMessages = (conversationId: string, ratings: Record<number, 1 | -1>) =>
+  apiFetch<Message[]>(`/api/conversations/${conversationId}/ratings`, {
+    method: 'PUT',
+    body: JSON.stringify({ ratings }),
+  })

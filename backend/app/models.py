@@ -72,6 +72,15 @@ class Message(SQLModel, table=True):
     sources_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     # Tools the model ran while writing this reply (JSON list), shown with it.
     tools_json: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Token usage reported by the provider (summed over tool-calling rounds).
+    prompt_tokens: int | None = Field(default=None)
+    completion_tokens: int | None = Field(default=None)
+    # Side-by-side replies to one message: their column (0, 1, …); None for a single reply.
+    slot: int | None = Field(default=None)
+    # Arena reply: the model's name stays hidden until the user votes.
+    blind: bool = Field(
+        default=False, sa_column_kwargs={"server_default": sa.false(), "nullable": False}
+    )
     created_at: datetime = Field(default_factory=utcnow)
 
 

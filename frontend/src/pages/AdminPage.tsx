@@ -1,6 +1,8 @@
 import { NavLink, Navigate, useParams } from 'react-router-dom'
+import AnalyticsPanel from '../components/admin/AnalyticsPanel'
 import ConnectionsPanel from '../components/admin/ConnectionsPanel'
 import DocumentsPanel from '../components/admin/DocumentsPanel'
+import EvaluationsPanel from '../components/admin/EvaluationsPanel'
 import GeneralPanel from '../components/admin/GeneralPanel'
 import ModelsPanel from '../components/admin/ModelsPanel'
 import UsersPanel from '../components/admin/UsersPanel'
@@ -14,6 +16,8 @@ const TABS = [
   { id: 'models', label: 'Models', Panel: ModelsPanel },
   { id: 'documents', label: 'Documents', Panel: DocumentsPanel },
   { id: 'web-search', label: 'Web search', Panel: WebSearchPanel },
+  { id: 'evaluations', label: 'Evaluations', Panel: EvaluationsPanel },
+  { id: 'analytics', label: 'Analytics', Panel: AnalyticsPanel },
   { id: 'general', label: 'General', Panel: GeneralPanel },
 ] as const
 

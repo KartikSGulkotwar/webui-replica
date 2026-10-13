@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from fastapi import HTTPException
@@ -17,6 +18,19 @@ logger = logging.getLogger(__name__)
 
 PERSONA = "persona"  # provider ID prefix of custom models: "persona:{id}"
 CUSTOM_GROUP = ProviderStatus(id=PERSONA, name="Custom models", kind="custom", ok=True)
+ARENA_MODEL_ID = "arena:blind"
+ARENA_GROUP = ProviderStatus(id="arena", name="Arena", kind="arena", ok=True)
+ARENA_MODEL = ModelInfo(
+    id=ARENA_MODEL_ID,
+    name="Arena",
+    provider_id="arena",
+    provider_name="Arena",
+    provider_kind="arena",
+    description=(
+        "Two hidden models answer side by side. Vote for the better one to see who they are."
+    ),
+    emoji="⚔️",
+)
 
 
 async def _fetch(entry: RegistryEntry) -> list[ModelInfo]:
@@ -84,7 +98,9 @@ def custom_model_info(c: CustomModel) -> ModelInfo:
     )
 
 
-async def build_catalog(session: Session, registry: ProviderRegistry, user: User) -> ModelsResponse:
+async def build_catalog(
+    session: Session, registry: ProviderRegistry, user: User, arena_models: Sequence[str] = ()
+) -> ModelsResponse:
     models, statuses = await provider_models(registry)
     available = {m.id for m in models}
     settings = model_settings(session)
@@ -115,7 +131,11 @@ async def build_catalog(session: Session, registry: ProviderRegistry, user: User
     shown.sort(key=lambda m: (m.provider_name.lower(), m.name.lower()))
     if customs:
         statuses.insert(0, CUSTOM_GROUP)
-    return ModelsResponse(models=customs + shown, providers=statuses)
+    # The arena needs two working models to pick from.
+    arena = [ARENA_MODEL] if len([m for m in arena_models if m in available]) >= 2 else []
+    if arena:
+        statuses.insert(0, ARENA_GROUP)
+    return ModelsResponse(models=arena + customs + shown, providers=statuses)
 
 
 @dataclass(frozen=True)

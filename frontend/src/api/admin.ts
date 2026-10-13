@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { AdminSettings, User, UserRole } from '../types/api'
+import type { AdminSettings, LeaderboardEntry, UsageReport, User, UserRole } from '../types/api'
 
 export const listUsers = () => apiFetch<User[]>('/api/admin/users')
 
@@ -16,3 +16,8 @@ export const getAdminSettings = () => apiFetch<AdminSettings>('/api/admin/settin
 
 export const saveAdminSettings = (body: AdminSettings) =>
   apiFetch<AdminSettings>('/api/admin/settings', { method: 'PUT', body: JSON.stringify(body) })
+
+export const getAnalytics = (days: number) =>
+  apiFetch<UsageReport>(`/api/admin/analytics?days=${days}`)
+
+export const getLeaderboard = () => apiFetch<LeaderboardEntry[]>('/api/admin/leaderboard')

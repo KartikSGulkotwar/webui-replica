@@ -5,8 +5,8 @@ export interface HealthResponse {
 
 export type ProviderKind = 'ollama' | 'openai_compat' | 'anthropic'
 
-/** Groups in the model menu: real providers, plus saved custom models. */
-export type CatalogKind = ProviderKind | 'custom'
+/** Groups in the model menu: real providers, saved custom models, and the arena. */
+export type CatalogKind = ProviderKind | 'custom' | 'arena'
 
 export interface ModelInfo {
   /** Namespaced: "{provider_id}:{name}"; custom models are "persona:{id}" */
@@ -69,6 +69,10 @@ export interface Message {
   sources?: Source[] | null
   /** Tools the model ran while writing the reply. */
   tools?: ToolTrace[] | null
+  /** Side-by-side replies to one message: their column (0, 1, …). */
+  slot?: number | null
+  /** Arena reply: model_id stays null until the user votes. */
+  blind?: boolean
   created_at: string
 }
 
@@ -185,20 +189,32 @@ export interface Usage {
   total_tokens?: number
 }
 
-export type StreamEvent =
-  /** Sent first when the reply draws on documents. */
-  | { sources: Source[] }
-  | { tool_call: { id: string; name: string; arguments: unknown } }
-  | { tool_result: { id: string; output: string; error: boolean } }
-  | { delta: string }
-  /** model_id is set when a different model answered (refusal fallback). */
-  | { done: true; usage: Usage | null; message_id: number | null; model_id?: string }
-  /** discard: the model declined; throw away the partial text already shown. */
-  | { error: string; discard?: boolean }
+/** Side-by-side replies tag each event with their column. */
+interface ReplyTag {
+  reply?: number
+}
+
+export type StreamEvent = ReplyTag &
+  (
+    | /** Sent first when several models answer (model_id is null in the arena). */
+      { replies: { model_id: string | null; slot: number }[]; blind: boolean }
+      /** Sent first when the reply draws on documents. */
+    | { sources: Source[] }
+    | { tool_call: { id: string; name: string; arguments: unknown } }
+    | { tool_result: { id: string; output: string; error: boolean } }
+    | { delta: string }
+    /** model_id is set when a different model answered (refusal fallback). An
+     * untagged {done: true} ends a side-by-side turn. */
+    | { done: true; usage?: Usage | null; message_id?: number | null; model_id?: string }
+    /** discard: the model declined; throw away the partial text already shown. */
+    | { error: string; discard?: boolean }
+  )
 
 export interface ChatStreamRequest {
   conversation_id: string
   model_id: string
+  /** More models that answer side by side. */
+  model_ids?: string[]
   action?: 'send' | 'regenerate' | 'edit'
   message?: string
   message_id?: number
@@ -266,6 +282,8 @@ export interface AdminSettings {
   enable_signup: boolean
   default_user_role: 'user' | 'pending'
   enabled_tools?: string[]
+  /** Provider models the arena picks two of for each message. */
+  arena_models?: string[]
 }
 
 export interface AdminModel {
@@ -309,4 +327,39 @@ export interface MemoryList {
   /** Memories are used in this user's chats. */
   enabled: boolean
   memories: MemoryItem[]
+}
+
+export const ARENA_MODEL_ID = 'arena:blind'
+
+export interface LeaderboardEntry {
+  model_id: string
+  elo: number
+  matches: number
+  wins: number
+  losses: number
+  ties: number
+  likes: number
+  dislikes: number
+}
+
+export interface UsageReport {
+  days: number
+  totals: {
+    users: number
+    guests: number
+    conversations: number
+    messages: number
+    active_users: number
+    period_messages: number
+    period_tokens: number
+  }
+  daily: { date: string; messages: number; replies: number; tokens: number; active_users: number }[]
+  models: {
+    model_id: string
+    replies: number
+    prompt_tokens: number
+    completion_tokens: number
+    likes: number
+    dislikes: number
+  }[]
 }

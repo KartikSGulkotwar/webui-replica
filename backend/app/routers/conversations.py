@@ -25,6 +25,7 @@ from app.schemas import (
     ConversationRead,
     ConversationUpdate,
     MessageRead,
+    RatingsUpdate,
     RatingUpdate,
     ShareRead,
 )
@@ -71,6 +72,28 @@ def message_read(m: Message) -> MessageRead:
         sources=json.loads(m.sources_json) if m.sources_json else None,
         tools=json.loads(m.tools_json) if m.tools_json else None,
     )
+
+
+def messages_read(messages: list[Message]) -> list[MessageRead]:
+    """Messages for the browser. Arena replies keep their models secret until
+    one of the replies to that message has been rated."""
+    out = [message_read(m) for m in messages]
+    turn: list[MessageRead] = []
+
+    def settle() -> None:
+        if not any(r.rating is not None for r in turn):
+            for r in turn:
+                if r.blind:
+                    r.model_id = None
+
+    for r in out:
+        if r.role == "assistant":
+            turn.append(r)
+        else:
+            settle()
+            turn = []
+    settle()
+    return out
 
 
 def list_attachments(session: Session, conversation: Conversation) -> list[AttachmentRead]:
@@ -134,7 +157,7 @@ def to_detail(session: Session, conversation: Conversation) -> ConversationDetai
         shared=share is not None,
         share_id=share.id if share else None,
         attachments=list_attachments(session, conversation),
-        messages=[message_read(m) for m in list_messages(session, conversation.id)],
+        messages=messages_read(list_messages(session, conversation.id)),
     )
 
 
@@ -303,6 +326,26 @@ def rate_message(
     return message_read(message)
 
 
+@router.put("/{conversation_id}/ratings", response_model=list[MessageRead])
+def rate_messages(
+    conversation_id: str, body: RatingsUpdate, session: SessionDep, user: ActiveUserDep
+) -> list[MessageRead]:
+    """Rate several replies at once, e.g. an arena vote (A better: {A: 1, B: -1})."""
+    get_conversation_or_404(session, conversation_id, user)
+    messages = [session.get(Message, message_id) for message_id in body.ratings]
+    for message in messages:
+        if message is None or message.conversation_id != conversation_id:
+            raise HTTPException(status_code=404, detail="Message not found")
+        if message.role != "assistant":
+            raise HTTPException(status_code=400, detail="Only replies can be rated")
+    for message in messages:
+        message.rating = body.ratings[message.id]  # type: ignore[index]
+        message.rating_comment = None
+        session.add(message)
+    session.commit()
+    return messages_read(list_messages(session, conversation_id))
+
+
 @router.put("/{conversation_id}/attachments", response_model=list[AttachmentRead])
 def update_attachments(
     conversation_id: str, body: AttachmentRefs, session: SessionDep, user: ActiveUserDep
@@ -321,7 +364,7 @@ def share_conversation(conversation_id: str, session: SessionDep, user: ActiveUs
     snapshot = json.dumps(
         [
             {"role": m.role, "content": m.content, "model_id": m.model_id}
-            for m in list_messages(session, conversation.id)
+            for m in messages_read(list_messages(session, conversation.id))
             if m.role != "system"
         ]
     )

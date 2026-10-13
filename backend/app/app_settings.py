@@ -8,7 +8,8 @@ from app.config import Settings
 from app.models import AppSetting
 from app.schemas import AdminSettings
 
-KEYS = ("enable_signup", "default_user_role", "enabled_tools")
+KEYS = ("enable_signup", "default_user_role", "enabled_tools", "arena_models")
+MAX_ARENA_MODELS = 12
 
 
 def get_admin_settings(session: Session, settings: Settings) -> AdminSettings:
@@ -16,6 +17,7 @@ def get_admin_settings(session: Session, settings: Settings) -> AdminSettings:
         "enable_signup": settings.enable_signup,
         "default_user_role": settings.default_user_role,
         "enabled_tools": [t.strip() for t in settings.enabled_tools.split(",") if t.strip()],
+        "arena_models": [m.strip() for m in settings.arena_models.split(",") if m.strip()],
     }
     for key in KEYS:
         row = session.get(AppSetting, key)
@@ -30,13 +32,22 @@ def get_admin_settings(session: Session, settings: Settings) -> AdminSettings:
 def save_admin_settings(session: Session, new: AdminSettings, settings: Settings) -> AdminSettings:
     from app.tools.registry import TOOLS
 
+    current = get_admin_settings(session, settings)
     if new.enabled_tools is None:
-        new = new.model_copy(
-            update={"enabled_tools": get_admin_settings(session, settings).enabled_tools}
-        )
+        new = new.model_copy(update={"enabled_tools": current.enabled_tools})
+    if new.arena_models is None:
+        new = new.model_copy(update={"arena_models": current.arena_models})
     unknown = set(new.enabled_tools or []) - set(TOOLS)
     if unknown:
         raise ValueError(f"Unknown tool: {sorted(unknown)[0]}")
+    arena = list(dict.fromkeys(new.arena_models or []))
+    if len(arena) > MAX_ARENA_MODELS:
+        raise ValueError(f"Choose at most {MAX_ARENA_MODELS} arena models")
+    for model_id in arena:
+        provider, _, name = model_id.partition(":")
+        if not provider or not name or provider in ("persona", "arena"):
+            raise ValueError(f"Not a provider model: {model_id}")
+    new = new.model_copy(update={"arena_models": arena})
     for key, value in new.model_dump().items():
         row = session.get(AppSetting, key) or AppSetting(key=key, value="null")
         row.value = json.dumps(value)

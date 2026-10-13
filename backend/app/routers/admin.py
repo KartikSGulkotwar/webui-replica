@@ -1,9 +1,10 @@
 from dataclasses import asdict
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from sqlmodel import col, delete, func, select
 
+from app.analytics import leaderboard, usage_report
 from app.app_settings import get_admin_settings, save_admin_settings
 from app.auth import AdminUserDep
 from app.catalog import provider_models
@@ -38,6 +39,8 @@ from app.schemas import (
     AdminUserUpdate,
     EmbeddingSettingsRead,
     EmbeddingSettingsUpdate,
+    LeaderboardEntry,
+    UsageReport,
     UserRead,
     WebSearchSettingsRead,
     WebSearchSettingsUpdate,
@@ -268,6 +271,21 @@ async def test_web_search(
     except SearchError as exc:
         return {"ok": False, "error": str(exc), "results": []}
     return {"ok": True, "results": [asdict(r) for r in results]}
+
+
+# --- analytics & evaluations ---------------------------------------------------------
+
+
+@router.get("/analytics", response_model=UsageReport)
+def read_analytics(
+    session: SessionDep, admin: AdminUserDep, days: int = Query(default=30, ge=1, le=365)
+) -> dict:
+    return usage_report(session, days)
+
+
+@router.get("/leaderboard", response_model=list[LeaderboardEntry])
+def read_leaderboard(session: SessionDep, admin: AdminUserDep) -> list[dict]:
+    return leaderboard(session)
 
 
 # --- models (visibility and names) ----------------------------------------------------

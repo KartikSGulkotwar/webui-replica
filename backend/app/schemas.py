@@ -42,7 +42,7 @@ class ChatParams(BaseModel):
 
 
 # Kinds in the model menu: real providers, plus "custom" for saved assistants.
-CatalogKind = Literal["ollama", "openai_compat", "anthropic", "custom"]
+CatalogKind = Literal["ollama", "openai_compat", "anthropic", "custom", "arena"]
 
 
 class ModelInfo(BaseModel):
@@ -135,6 +135,10 @@ class MessageRead(BaseModel):
     rating_comment: str | None = None
     sources: list["SourceRead"] | None = None
     tools: list["ToolTraceRead"] | None = None
+    # Side-by-side replies: their column. Arena replies are `blind`, and their
+    # model_id is hidden until the user votes.
+    slot: int | None = None
+    blind: bool = False
     created_at: datetime
 
 
@@ -175,6 +179,12 @@ class ConversationDetail(ConversationRead):
     messages: list[MessageRead]
 
 
+class RatingsUpdate(BaseModel):
+    """Several replies rated at once, e.g. an arena vote: {message_id: 1 | -1}."""
+
+    ratings: dict[int, Literal[1, -1]] = Field(min_length=1, max_length=4)
+
+
 class RatingUpdate(BaseModel):
     rating: Literal[1, -1] | None
     comment: str | None = Field(default=None, max_length=1000)
@@ -202,11 +212,16 @@ class SharedChatRead(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    """send: add `message` and reply. regenerate: replace the last reply.
-    edit: change user message `message_id` to `message`, drop everything after it, reply."""
+    """send: add `message` and reply. regenerate: replace the replies to the last
+    message, or just reply `message_id`. edit: change user message `message_id`
+    to `message`, drop everything after it, reply.
+
+    `model_ids` adds models that answer side by side; model_id "arena:blind"
+    lets two hidden models answer."""
 
     conversation_id: str
     model_id: str = Field(min_length=3, description='Namespaced, e.g. "ollama:llama3.2:1b"')
+    model_ids: list[str] = Field(default_factory=list, max_length=3)
     action: Literal["send", "regenerate", "edit"] = "send"
     message: str | None = Field(default=None, min_length=1, max_length=100_000)
     message_id: int | None = None
@@ -384,6 +399,8 @@ class AdminSettings(BaseModel):
     default_user_role: Literal["user", "pending"]
     # Omitted on update: keep the current tools.
     enabled_tools: list[str] | None = None
+    # Provider models the Arena picks from (two per message). Omitted: keep.
+    arena_models: list[str] | None = None
 
 
 # --- knowledge (RAG) ---------------------------------------------------------------
@@ -461,6 +478,51 @@ class WebSearchTest(BaseModel):
 
 
 # --- model management ----------------------------------------------------------------
+
+
+class LeaderboardEntry(BaseModel):
+    model_id: str
+    elo: int
+    matches: int
+    wins: int
+    losses: int
+    ties: int
+    likes: int
+    dislikes: int
+
+
+class UsageTotals(BaseModel):
+    users: int
+    guests: int
+    conversations: int
+    messages: int
+    active_users: int  # in the period
+    period_messages: int
+    period_tokens: int
+
+
+class UsageDay(BaseModel):
+    date: str
+    messages: int
+    replies: int
+    tokens: int
+    active_users: int
+
+
+class UsageByModel(BaseModel):
+    model_id: str
+    replies: int
+    prompt_tokens: int
+    completion_tokens: int
+    likes: int
+    dislikes: int
+
+
+class UsageReport(BaseModel):
+    days: int
+    totals: UsageTotals
+    daily: list[UsageDay]
+    models: list[UsageByModel]
 
 
 class AdminModelRead(BaseModel):

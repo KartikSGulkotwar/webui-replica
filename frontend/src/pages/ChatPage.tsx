@@ -2,20 +2,21 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { errorMessage } from '../api/client'
-import { rateMessage } from '../api/conversations'
+import { rateMessage, rateMessages } from '../api/conversations'
 import { AttachButton, AttachmentChips } from '../components/ChatAttachments'
 import ChatMenu from '../components/ChatMenu'
 import ChatWindow from '../components/ChatWindow'
 import Composer from '../components/Composer'
-import { MenuIcon, PlusIcon } from '../components/icons'
-import MessageBubble from '../components/MessageBubble'
+import { MenuIcon, PlusIcon, XIcon } from '../components/icons'
+import MessageBubble, { type MessageActions } from '../components/MessageBubble'
+import ReplyGroup, { type ReplyColumn, type Vote } from '../components/ReplyGroup'
 import ToolsButton from '../components/ToolsButton'
 import WebSearchButton from '../components/WebSearchButton'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatAttachments } from '../hooks/useChatAttachments'
 import { useSelectedTools, useToolList } from '../hooks/useTools'
-import { expectedCount, useChatStream } from '../hooks/useChatStream'
+import { expectedCount, useChatStream, type PendingReply } from '../hooks/useChatStream'
 import { useMe } from '../hooks/useAuth'
 import { conversationKey, useConversation } from '../hooks/useConversation'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
@@ -23,7 +24,7 @@ import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { useAppConfig } from '../hooks/useProviders'
 import { modelLabel } from '../lib/models'
-import type { ConversationDetail, Rating } from '../types/api'
+import { ARENA_MODEL_ID, type ConversationDetail, type Message, type Rating } from '../types/api'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
@@ -32,6 +33,19 @@ export default function ChatPage() {
   const config = useAppConfig()
   const me = useMe()
   const { selected, select } = useSelectedModel(models, config.data?.default_model)
+  // More models that answer side by side (not with the arena).
+  const [extras, setExtras] = useState<string[]>([])
+  const isArena = selected?.id === ARENA_MODEL_ID
+  const extraModels = isArena
+    ? []
+    : extras
+        .map((x) => models?.find((m) => m.id === x))
+        .filter((m): m is NonNullable<typeof m> => !!m && m.id !== selected?.id)
+  const chosen = selected ? [selected.id, ...extraModels.map((m) => m.id)] : []
+  const addExtra = () => {
+    const next = models?.find((m) => m.provider_kind !== 'arena' && !chosen.includes(m.id))
+    if (next) setExtras((x) => [...x.filter((id) => chosen.includes(id)), next.id])
+  }
   const conversation = useConversation(id)
   const { pending, run, stop, isStreaming } = useChatStream(id)
   const queryClient = useQueryClient()
@@ -69,6 +83,24 @@ export default function ChatPage() {
     },
     onError: () => queryClient.invalidateQueries({ queryKey: conversationKey(id!) }),
   })
+  const VOTES: Record<Vote, [1 | -1, 1 | -1]> = {
+    a: [1, -1],
+    b: [-1, 1],
+    tie: [1, 1],
+    bad: [-1, -1],
+  }
+  const vote = useMutation({
+    mutationFn: (v: { replies: Message[]; vote: Vote }) => {
+      const [a, b] = [...v.replies].sort((x, y) => (x.slot ?? 0) - (y.slot ?? 0))
+      const [ra, rb] = VOTES[v.vote]
+      return rateMessages(id!, { [a.id]: ra, [b.id]: rb })
+    },
+    // The answer reveals the models.
+    onSuccess: (messages) =>
+      queryClient.setQueryData<ConversationDetail>(conversationKey(id!), (d) =>
+        d ? { ...d, messages } : d,
+      ),
+  })
   const { sidebarOpen, openSidebar } = useLayout()
   useDocumentTitle(id ? conversation.data?.title : undefined)
 
@@ -83,8 +115,25 @@ export default function ChatPage() {
     p.conversationId !== '' &&
     serverMessages.length < p.baseCount + 1
   const showPendingAssistant =
-    !!p && (p.status === 'streaming' || (p.text !== '' && serverMessages.length < expectedCount(p)))
-  const lastAssistantId = [...serverMessages].reverse().find((m) => m.role === 'assistant')?.id
+    !!p &&
+    (p.status === 'streaming' ||
+      (p.replies.some((r) => r.text !== '') && serverMessages.length < expectedCount(p)))
+  // Messages, with consecutive replies to the same message grouped.
+  const items: (Message | Message[])[] = []
+  for (const m of serverMessages) {
+    const last = items.at(-1)
+    if (m.role === 'assistant' && Array.isArray(last)) last.push(m)
+    else items.push(m.role === 'assistant' ? [m] : m)
+  }
+  const lastGroup = Array.isArray(items.at(-1)) ? (items.at(-1) as Message[]) : null
+  const sideBySide = (g: Message[]) => g.length > 1 || g.some((m) => m.slot != null || m.blind)
+  // Regenerating one of several replies: it rejoins its group while it streams.
+  const pendingJoinsLast =
+    !!p && p.kind === 'regenerate' && p.replies.length === 1 && p.replies[0].slot != null
+  const wide =
+    chosen.length > 1 ||
+    items.some((x) => Array.isArray(x) && sideBySide(x)) ||
+    (!!p && p.replies.length > 1)
   const lastMessage = serverMessages.at(-1)
   // A question whose reply failed or was never written can be answered again.
   const canRetry =
@@ -100,6 +149,56 @@ export default function ChatPage() {
   else if (modelsQuery.isError) disabledReason = 'Backend unreachable'
   else if (!selected) disabledReason = 'No models available'
   else if (!selectedProviderOk) disabledReason = `${selected.provider_name} is offline`
+
+  const label = (modelId: string | null) => (modelId ? modelLabel(modelId, models) : null)
+  const replyActions = (m: Message, inLastGroup: boolean, group: Message[]): MessageActions => ({
+    rating: m.rating,
+    onRate: (rating, comment) => rate.mutate({ messageId: m.id, rating, comment }),
+    onRegenerate:
+      inLastGroup && selected && !m.blind
+        ? sideBySide(group)
+          ? // One column: the same model writes it again.
+            () =>
+              run(
+                { kind: 'regenerate', messageId: m.id },
+                [m.model_id ?? selected.id],
+                undefined,
+                runOptions,
+              )
+          : () => run({ kind: 'regenerate' }, chosen, undefined, runOptions)
+        : undefined,
+    busy: isStreaming || !selected,
+  })
+  const serverColumn = (m: Message, group: Message[]): ReplyColumn => ({
+    key: m.id,
+    slot: m.slot ?? 0,
+    model: label(m.model_id),
+    content: m.content,
+    sources: m.sources,
+    toolCalls: m.tools,
+    rating: m.rating,
+    actions: replyActions(m, group === lastGroup, group),
+  })
+  const pendingColumn = (r: PendingReply, i: number): ReplyColumn => ({
+    key: `pending-${i}`,
+    slot: r.slot ?? i,
+    model: label(r.modelId),
+    content: r.text,
+    streaming: r.status === 'streaming',
+    error: r.status === 'error' ? r.error : undefined,
+    sources: r.sources,
+    toolCalls: r.tools,
+  })
+  const renderGroup = (group: Message[], extra: ReplyColumn[] = []) => (
+    <ReplyGroup
+      key={`g-${group[0]?.id ?? 'pending'}`}
+      columns={[...group.map((m) => serverColumn(m, group)), ...extra]}
+      toolInfo={toolList.data}
+      blind={group.some((m) => m.blind) || (!!p?.blind && extra.length > 0)}
+      onVote={group.length === 2 ? (v) => vote.mutate({ replies: group, vote: v }) : undefined}
+      voting={vote.isPending}
+    />
+  )
 
   const notFound = !!id && conversation.isError
   const isEmpty = !id || (conversation.isSuccess && serverMessages.length === 0 && !p)
@@ -126,7 +225,42 @@ export default function ChatPage() {
           selected={selected}
           onSelect={select}
           isAdmin={me.data?.role === 'admin'}
+          label={extraModels.length ? 'Model 1' : undefined}
         />
+        {extraModels.map((m, i) => (
+          <div key={m.id} className="flex min-w-0 items-center">
+            <ModelSelector
+              data={modelsQuery.data}
+              isLoading={modelsQuery.isLoading}
+              isError={modelsQuery.isError}
+              selected={m}
+              onSelect={(next) => setExtras((x) => x.map((old) => (old === m.id ? next : old)))}
+              isAdmin={me.data?.role === 'admin'}
+              exclude={(o) => o.provider_kind === 'arena'}
+              label={`Model ${i + 2}`}
+            />
+            <button
+              type="button"
+              onClick={() => setExtras((x) => x.filter((old) => old !== m.id))}
+              className="rounded-md p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+              aria-label={`Stop comparing with ${m.name}`}
+              title="Remove"
+            >
+              <XIcon />
+            </button>
+          </div>
+        ))}
+        {selected && !isArena && chosen.length < 3 && (models?.length ?? 0) > chosen.length && (
+          <button
+            type="button"
+            onClick={addExtra}
+            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            aria-label="Compare with another model"
+            title="Compare with another model"
+          >
+            <PlusIcon />
+          </button>
+        )}
         <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500">
           {conversation.data?.title}
         </div>
@@ -164,20 +298,22 @@ export default function ChatPage() {
         </div>
       ) : isEmpty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          {selected?.provider_kind === 'custom' && (
+          {(selected?.provider_kind === 'custom' || isArena) && (
             <span className="text-4xl" aria-hidden="true">
-              {selected.emoji}
+              {selected!.emoji}
             </span>
           )}
           <h1 className="text-2xl font-semibold tracking-tight">
-            {selected?.provider_kind === 'custom' ? selected.name : 'How can I help?'}
+            {selected?.provider_kind === 'custom' || isArena ? selected!.name : 'How can I help?'}
           </h1>
-          <p className="text-sm text-zinc-500">
-            {selected?.provider_kind === 'custom'
-              ? (selected.description ?? `${selected.name} is ready.`)
-              : selected
-                ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
-                : (disabledReason ?? '')}
+          <p className="max-w-md text-sm text-zinc-500">
+            {selected?.provider_kind === 'custom' || isArena
+              ? (selected!.description ?? `${selected!.name} is ready.`)
+              : extraModels.length
+                ? `${[selected!, ...extraModels].map((m) => m.name).join(', ')} will answer side by side.`
+                : selected
+                  ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
+                  : (disabledReason ?? '')}
           </p>
           {draftSystemPrompt && (
             <p className="max-w-md text-xs text-indigo-500">
@@ -190,58 +326,67 @@ export default function ChatPage() {
       ) : (
         <ChatWindow
           key={id}
-          contentKey={`${serverMessages.length}:${p?.text.length ?? 0}:${p?.status ?? ''}`}
+          contentKey={`${serverMessages.length}:${p?.replies.reduce((n, r) => n + r.text.length, 0) ?? 0}:${p?.status ?? ''}`}
+          wide={wide}
         >
-          {serverMessages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              role={m.role}
-              content={m.content}
-              model={
-                m.role === 'assistant' && m.model_id ? modelLabel(m.model_id, models) : undefined
-              }
-              sources={m.sources}
-              toolCalls={m.tools}
-              toolInfo={toolList.data}
-              actions={
-                m.role === 'assistant'
-                  ? {
-                      rating: m.rating,
-                      onRate: (rating, comment) =>
-                        rate.mutate({ messageId: m.id, rating, comment }),
-                      onRegenerate:
-                        m.id === lastAssistantId && selected
-                          ? () => run({ kind: 'regenerate' }, selected.id, undefined, runOptions)
-                          : undefined,
-                      busy: isStreaming || !selected,
-                    }
-                  : {
-                      onEdit: selected
-                        ? (content) =>
-                            run(
-                              { kind: 'edit', messageId: m.id, content },
-                              selected.id,
-                              undefined,
-                              runOptions,
-                            )
-                        : undefined,
-                      busy: isStreaming,
-                    }
-              }
-            />
-          ))}
+          {items.map((item) => {
+            if (!Array.isArray(item)) {
+              const m = item
+              return (
+                <MessageBubble
+                  key={m.id}
+                  role={m.role}
+                  content={m.content}
+                  actions={{
+                    onEdit: selected
+                      ? (content) =>
+                          run(
+                            { kind: 'edit', messageId: m.id, content },
+                            chosen,
+                            undefined,
+                            runOptions,
+                          )
+                      : undefined,
+                    busy: isStreaming,
+                  }}
+                />
+              )
+            }
+            const group = item
+            const joining = group === lastGroup && pendingJoinsLast && showPendingAssistant
+            if (sideBySide(group) || joining) {
+              return renderGroup(group, joining ? p!.replies.map(pendingColumn) : [])
+            }
+            const m = group[0]
+            return (
+              <MessageBubble
+                key={m.id}
+                role="assistant"
+                content={m.content}
+                model={label(m.model_id) ?? undefined}
+                sources={m.sources}
+                toolCalls={m.tools}
+                toolInfo={toolList.data}
+                actions={replyActions(m, group === lastGroup, group)}
+              />
+            )
+          })}
           {showPendingUser && <MessageBubble role="user" content={p.userContent} />}
-          {showPendingAssistant && (
-            <MessageBubble
-              role="assistant"
-              content={p.text}
-              model={modelLabel(p.modelId, models)}
-              streaming={p.status === 'streaming'}
-              sources={p.sources}
-              toolCalls={p.tools}
-              toolInfo={toolList.data}
-            />
-          )}
+          {showPendingAssistant &&
+            !pendingJoinsLast &&
+            (p.replies.length === 1 && p.replies[0].slot == null ? (
+              <MessageBubble
+                role="assistant"
+                content={p.replies[0].text}
+                model={label(p.replies[0].modelId) ?? undefined}
+                streaming={p.replies[0].status === 'streaming'}
+                sources={p.replies[0].sources}
+                toolCalls={p.replies[0].tools}
+                toolInfo={toolList.data}
+              />
+            ) : (
+              renderGroup([], p.replies.map(pendingColumn))
+            ))}
           {pendingError && (
             <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
               {pendingError}
@@ -250,7 +395,7 @@ export default function ChatPage() {
           {canRetry && (
             <button
               type="button"
-              onClick={() => run({ kind: 'regenerate' }, selected!.id, undefined, runOptions)}
+              onClick={() => run({ kind: 'regenerate' }, chosen, undefined, runOptions)}
               className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
               Get a reply
@@ -264,7 +409,7 @@ export default function ChatPage() {
           if (!selected) return
           run(
             { kind: 'send', content: text },
-            selected.id,
+            chosen,
             id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
             runOptions,
           )
