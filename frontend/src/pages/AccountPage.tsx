@@ -3,6 +3,7 @@ import { errorMessage } from '../api/client'
 import { exportAllConversations } from '../api/conversations'
 import { downloadFile } from '../lib/exportChat'
 import PageHeader from '../components/PageHeader'
+import VoiceSettings from '../components/VoiceSettings'
 import { useLogout, useMe, useUpdateMe } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -173,6 +174,14 @@ export default function AccountPage() {
               </div>
             </form>
           )}
+
+          <div className={section}>
+            <h2 className="font-semibold">Voice</h2>
+            <p className="text-sm text-zinc-500">
+              How replies sound when you press 🔊 or use voice mode.
+            </p>
+            <VoiceSettings />
+          </div>
 
           <div className={section}>
             <h2 className="font-semibold">Your data</h2>

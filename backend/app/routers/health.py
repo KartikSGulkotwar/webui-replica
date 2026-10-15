@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from app import __version__
 from app.app_settings import get_admin_settings, usable_tools
+from app.audio import audio_config
 from app.auth import ActiveUserDep
 from app.images.service import image_config
 from app.oauth import configured_providers
@@ -29,6 +30,7 @@ def config(request: Request) -> AppConfig:
         admin_settings = get_admin_settings(session, settings)
         search = web_search_config(session, settings, request.app.state.cipher)
         images = image_config(session, settings, request.app.state.cipher)
+        stt, tts = audio_config(session, settings, request.app.state.cipher)
     return AppConfig(
         encryption_configured=request.app.state.cipher.configured,
         in_docker=Path("/.dockerenv").exists(),
@@ -41,6 +43,8 @@ def config(request: Request) -> AppConfig:
         max_upload_mb=settings.max_upload_mb,
         web_search=search.enabled,
         image_generation=images.enabled,
+        speech_to_text=stt.enabled,
+        text_to_speech=tts.enabled,
     )
 
 

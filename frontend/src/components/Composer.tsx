@@ -20,6 +20,8 @@ interface Props {
   above?: ReactNode
   /** Buttons left of the input (e.g. attach). */
   leading?: ReactNode
+  /** Buttons right of the input, given a way to add text (e.g. dictation). */
+  trailing?: (addText: (text: string) => void) => ReactNode
 }
 
 export default function Composer({
@@ -31,6 +33,7 @@ export default function Composer({
   restoreText,
   above,
   leading,
+  trailing,
 }: Props) {
   const [text, setText] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -48,6 +51,12 @@ export default function Composer({
   }, [text])
 
   const canSend = !disabled && !isStreaming && text.trim().length > 0
+
+  // Dictated text joins what's already typed.
+  const addText = (more: string) => {
+    setText((current) => (current.trim() ? `${current.replace(/\s+$/, '')} ${more}` : more))
+    ref.current?.focus()
+  }
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
@@ -78,6 +87,7 @@ export default function Composer({
           placeholder={disabled && disabledReason ? disabledReason : 'Send a message'}
           className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-zinc-400"
         />
+        {trailing?.(addText)}
         {isStreaming ? (
           <button
             type="button"

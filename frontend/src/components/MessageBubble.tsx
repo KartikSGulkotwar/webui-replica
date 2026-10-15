@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } fro
 import type { ImageRef, Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
 import { normalizeCitations } from '../lib/citations'
 import GeneratedImages from './GeneratedImages'
+import ReadAloudButton from './ReadAloudButton'
 import SourcesList from './SourcesList'
 import ToolCallsView from './ToolCallsView'
 import { CheckIcon, CopyIcon, PencilIcon, RefreshIcon, ThumbDownIcon, ThumbUpIcon } from './icons'
@@ -278,6 +279,7 @@ function MessageBubble({
         <div className="flex flex-col gap-1">
           <div className="-ml-1.5 flex gap-0.5">
             <CopyButton text={text} />
+            {content && <ReadAloudButton text={text} />}
             {actions.onRegenerate && (
               <ActionButton
                 label="Regenerate"

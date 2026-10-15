@@ -7,6 +7,7 @@ from sqlmodel import col, delete, func, select
 
 from app.analytics import leaderboard, usage_report
 from app.app_settings import get_admin_settings, save_admin_settings
+from app.audio import load_audio_settings, save_audio_settings
 from app.auth import AdminUserDep
 from app.catalog import provider_models
 from app.db import SessionDep
@@ -41,6 +42,8 @@ from app.schemas import (
     AdminModelUpdate,
     AdminSettings,
     AdminUserUpdate,
+    AudioSettingsRead,
+    AudioSettingsUpdate,
     EmbeddingSettingsRead,
     EmbeddingSettingsUpdate,
     ImageSettingsRead,
@@ -279,6 +282,61 @@ async def test_web_search(
     except SearchError as exc:
         return {"ok": False, "error": str(exc), "results": []}
     return {"ok": True, "results": [asdict(r) for r in results]}
+
+
+# --- audio ---------------------------------------------------------------------------
+
+
+def audio_read(request: Request, session) -> AudioSettingsRead:
+    stored = load_audio_settings(session, request.app.state.settings)
+
+    def part(p: dict) -> dict:
+        return {
+            "engine": p.get("engine") or "",
+            "base_url": p.get("base_url") or "",
+            "model": p.get("model") or "",
+            "voice": p.get("voice") or "",
+            "has_key": bool(p.get("api_key_encrypted") or p.get("env_api_key")),
+        }
+
+    return AudioSettingsRead(stt=part(stored.get("stt") or {}), tts=part(stored.get("tts") or {}))
+
+
+@router.get("/audio", response_model=AudioSettingsRead)
+def read_audio_settings(
+    request: Request, session: SessionDep, admin: AdminUserDep
+) -> AudioSettingsRead:
+    return audio_read(request, session)
+
+
+@router.put("/audio", response_model=AudioSettingsRead)
+def write_audio_settings(
+    body: AudioSettingsUpdate, request: Request, session: SessionDep, admin: AdminUserDep
+) -> AudioSettingsRead:
+    stored = load_audio_settings(session, request.app.state.settings)
+    values: dict = {}
+    for name, label in (("stt", "Speech-to-text"), ("tts", "Text-to-speech")):
+        new, old = getattr(body, name), stored.get(name) or {}
+        part = {
+            "engine": new.engine,
+            "base_url": new.base_url.strip().rstrip("/"),
+            "model": new.model.strip(),
+            "voice": new.voice.strip(),
+            "api_key_encrypted": old.get("api_key_encrypted"),
+            "env_api_key": old.get("env_api_key", False),
+        }
+        if new.engine and not (part["base_url"] and part["model"]):
+            raise HTTPException(status_code=422, detail=f"{label} needs a base URL and a model")
+        if new.api_key is not None:
+            key = new.api_key.strip()
+            try:
+                part["api_key_encrypted"] = request.app.state.cipher.encrypt(key) if key else None
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            part["env_api_key"] = False
+        values[name] = part
+    save_audio_settings(session, values)
+    return audio_read(request, session)
 
 
 # --- image generation ---------------------------------------------------------------

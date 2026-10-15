@@ -333,6 +333,9 @@ class AppConfig(BaseModel):
     web_search: bool = False
     # An image engine is set up, so chats can make images.
     image_generation: bool = False
+    # Server speech engines; without them the browser's own speech is used.
+    speech_to_text: bool = False
+    text_to_speech: bool = False
 
 
 # --- accounts -----------------------------------------------------------------
@@ -501,6 +504,40 @@ class ImageSettingsUpdate(BaseModel):
     size: Literal["512x512", "768x768", "1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
     # Omit/null to keep the stored key, "" to remove it.
     api_key: str | None = Field(default=None, max_length=1000)
+
+
+class SpeechPart(BaseModel):
+    engine: Literal["", "openai"]
+    base_url: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=200)
+    voice: str = Field(default="", max_length=100)  # text-to-speech only
+
+
+class SpeechPartRead(SpeechPart):
+    has_key: bool
+
+
+class AudioSettingsRead(BaseModel):
+    stt: SpeechPartRead
+    tts: SpeechPartRead
+
+
+class SpeechPartUpdate(SpeechPart):
+    # Omit/null to keep the stored key, "" to remove it.
+    api_key: str | None = Field(default=None, max_length=1000)
+
+
+class AudioSettingsUpdate(BaseModel):
+    stt: SpeechPartUpdate
+    tts: SpeechPartUpdate
+
+
+class SpeechRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=20_000)
+
+
+class Transcription(BaseModel):
+    text: str
 
 
 class ImageTest(BaseModel):

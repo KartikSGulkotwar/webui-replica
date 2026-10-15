@@ -50,6 +50,17 @@ class Settings(BaseSettings):
 
     # Tools the model may call (comma-separated); admins change this at runtime.
     enabled_tools: str = "calculator,current_time,fetch_url,web_search,add_memory,generate_image"
+    # Speech: OpenAI-compatible audio APIs ("openai"), e.g. Groq Whisper for
+    # speech-to-text; blank = the browser's own speech features.
+    stt_engine: str = ""
+    stt_base_url: str = ""
+    stt_api_key: str = ""
+    stt_model: str = ""
+    tts_engine: str = ""
+    tts_base_url: str = ""
+    tts_api_key: str = ""
+    tts_model: str = ""
+    tts_voice: str = ""
     # Image generation: pollinations (free, no key), openai (OpenAI-compatible
     # /images/generations: base URL + model + key) or automatic1111 (base URL); blank = off.
     image_engine: str = ""

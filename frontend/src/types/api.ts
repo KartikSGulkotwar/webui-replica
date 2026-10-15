@@ -275,6 +275,9 @@ export interface AppConfig {
   web_search?: boolean
   /** An image engine is set up, so chats can make images. */
   image_generation?: boolean
+  /** Server speech engines; without them the browser's own speech is used. */
+  speech_to_text?: boolean
+  text_to_speech?: boolean
 }
 
 export type UserRole = 'admin' | 'user' | 'pending'
@@ -384,4 +387,17 @@ export interface ImageSettings {
   model: string
   size: string
   has_key: boolean
+}
+
+export interface SpeechPart {
+  engine: '' | 'openai'
+  base_url: string
+  model: string
+  voice: string
+  has_key: boolean
+}
+
+export interface AudioSettings {
+  stt: SpeechPart
+  tts: SpeechPart
 }

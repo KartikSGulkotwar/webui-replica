@@ -12,6 +12,8 @@ import MessageBubble, { type MessageActions } from '../components/MessageBubble'
 import ReplyGroup, { type ReplyColumn, type Vote } from '../components/ReplyGroup'
 import ToolsButton from '../components/ToolsButton'
 import ComposerToggle, { GlobeIcon, ImageIcon } from '../components/ComposerToggle'
+import DictationButton from '../components/DictationButton'
+import VoiceMode, { type VoiceReply } from '../components/VoiceMode'
 import ModelSelector from '../components/ModelSelector'
 import ThemeToggle from '../components/ThemeToggle'
 import { useChatAttachments } from '../hooks/useChatAttachments'
@@ -23,6 +25,9 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { useAppConfig } from '../hooks/useProviders'
+import { browserCanListen } from '../lib/browserDictation'
+import { canRecord } from '../lib/recorder'
+import { browserCanSpeak } from '../lib/speech'
 import { modelLabel } from '../lib/models'
 import { ARENA_MODEL_ID, type ConversationDetail, type Message, type Rating } from '../types/api'
 
@@ -64,6 +69,11 @@ export default function ChatPage() {
     webSearch: canSearch && webSearchOn,
     image: canImage && imageOn,
   }
+  // Voice: dictation in the composer, and a hands-free voice mode.
+  const serverStt = !!config.data?.speech_to_text
+  const serverTts = !!config.data?.text_to_speech
+  const canTalk = (serverStt ? canRecord() : browserCanListen()) && (serverTts || browserCanSpeak())
+  const [voiceOpen, setVoiceOpen] = useState(false)
   // System prompt chosen before the first message, when the chat doesn't exist yet.
   const [draftSystemPrompt, setDraftSystemPrompt] = useState('')
   const attach = useChatAttachments(
@@ -208,6 +218,27 @@ export default function ChatPage() {
       voting={vote.isPending}
     />
   )
+
+  const send = (text: string) => {
+    if (!selected) return
+    run(
+      { kind: 'send', content: text },
+      chosen,
+      id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
+      runOptions,
+    )
+    if (!id) setDraftSystemPrompt('')
+  }
+  // Voice mode reads out the first reply once it's finished.
+  const voiceReply: VoiceReply | null =
+    pending && pending.kind === 'send'
+      ? {
+          key: `${pending.conversationId}:${pending.baseCount}`,
+          text: pending.replies[0]?.text ?? '',
+          done: pending.status !== 'streaming',
+          error: pending.status === 'error' ? pending.error : undefined,
+        }
+      : null
 
   const notFound = !!id && conversation.isError
   const isEmpty = !id || (conversation.isSuccess && serverMessages.length === 0 && !p)
@@ -416,16 +447,7 @@ export default function ChatPage() {
       )}
 
       <Composer
-        onSend={(text) => {
-          if (!selected) return
-          run(
-            { kind: 'send', content: text },
-            chosen,
-            id ? undefined : { systemPrompt: draftSystemPrompt, attachments: attach.draft },
-            runOptions,
-          )
-          if (!id) setDraftSystemPrompt('')
-        }}
+        onSend={send}
         onStop={stop}
         restoreText={p?.notSent ? p.userContent : undefined}
         isStreaming={isStreaming}
@@ -463,9 +485,50 @@ export default function ChatPage() {
             )}
           </>
         }
+        trailing={(addText) => (
+          <>
+            <DictationButton onText={addText} serverStt={serverStt} disabled={notFound} />
+            {canTalk && (
+              <button
+                type="button"
+                onClick={() => setVoiceOpen(true)}
+                disabled={!!disabledReason || notFound || isStreaming}
+                className="self-end rounded-xl p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800"
+                aria-label="Voice mode"
+                title="Voice mode: talk and listen"
+              >
+                <WaveIcon />
+              </button>
+            )}
+          </>
+        )}
         disabled={!!disabledReason || notFound || attach.busy}
         disabledReason={disabledReason}
       />
+      {voiceOpen && (
+        <VoiceMode
+          serverStt={serverStt}
+          serverTts={serverTts}
+          onSend={send}
+          reply={voiceReply}
+          onClose={() => setVoiceOpen(false)}
+        />
+      )}
     </div>
   )
 }
+
+const WaveIcon = () => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    aria-hidden="true"
+  >
+    <path d="M3 10v4M7 6v12M11 3v18M15 7v10M19 10v4" />
+  </svg>
+)
