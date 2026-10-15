@@ -25,6 +25,21 @@ interface Options {
 
 const SPEECH_LEVEL = 0.045 // RMS above this counts as speaking
 
+// Browsers start an AudioContext paused unless a click is still "fresh". Voice
+// mode listens again long after the last click, so one context is created and
+// resumed on the first (clicked) recording and kept running for later turns.
+let shared: AudioContext | null = null
+async function audioContext(): Promise<AudioContext> {
+  if (!shared || shared.state === 'closed') shared = new AudioContext()
+  if (shared.state === 'suspended') await shared.resume().catch(() => {})
+  return shared
+}
+
+/** Call from a click handler so later recordings can measure loudness. */
+export function warmUpAudio(): void {
+  void audioContext()
+}
+
 export async function startRecording(options: Options = {}): Promise<Recording> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((t) =>
@@ -35,10 +50,11 @@ export async function startRecording(options: Options = {}): Promise<Recording> 
   recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data)
   recorder.start(250)
 
-  const context = new AudioContext()
+  const context = await audioContext()
   const analyser = context.createAnalyser()
   analyser.fftSize = 1024
-  context.createMediaStreamSource(stream).connect(analyser)
+  const source = context.createMediaStreamSource(stream)
+  source.connect(analyser)
   const samples = new Float32Array(analyser.fftSize)
   let heard = false
   let quietSince = 0
@@ -63,8 +79,8 @@ export async function startRecording(options: Options = {}): Promise<Recording> 
 
   const release = () => {
     window.clearInterval(timer)
+    source.disconnect()
     stream.getTracks().forEach((t) => t.stop())
-    context.close().catch(() => {})
   }
 
   return {

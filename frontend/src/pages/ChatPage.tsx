@@ -26,7 +26,7 @@ import { useLayout } from '../hooks/useLayout'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { useAppConfig } from '../hooks/useProviders'
 import { browserCanListen } from '../lib/browserDictation'
-import { canRecord } from '../lib/recorder'
+import { canRecord, warmUpAudio } from '../lib/recorder'
 import { browserCanSpeak } from '../lib/speech'
 import { modelLabel } from '../lib/models'
 import { ARENA_MODEL_ID, type ConversationDetail, type Message, type Rating } from '../types/api'
@@ -491,7 +491,10 @@ export default function ChatPage() {
             {canTalk && (
               <button
                 type="button"
-                onClick={() => setVoiceOpen(true)}
+                onClick={() => {
+                  warmUpAudio() // while the click still counts as a user gesture
+                  setVoiceOpen(true)
+                }}
                 disabled={!!disabledReason || notFound || isStreaming}
                 className="self-end rounded-xl p-2 text-zinc-500 hover:bg-zinc-100 disabled:opacity-40 dark:hover:bg-zinc-800"
                 aria-label="Voice mode"

@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python3 - /private/tmp/claude-501/-Users-kartikgulkotwar-OpenwebUiReplica/fda25460-56c0-4452-8e97-5c0657d6eaa1/scratchpad)"
+      "Bash(python3 - /private/tmp/claude-501/-Users-kartikgulkotwar-OpenwebUiReplica/fda25460-56c0-4452-8e97-5c0657d6eaa1/scratchpad)",
+      "Bash(sed \"s|'--use-fake-device-for-media-stream', |'--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', |\" live19.mjs)",
+      "Bash(sed -i '' \"s|console.log\\('saved:'.*|console.log\\('saved:', JSON.stringify\\(conv\\).slice\\(0, 300\\)\\)|\" live19b.mjs)",
+      "Bash(node live19b.mjs /private/tmp/claude-501/-Users-kartikgulkotwar-OpenwebUiReplica/fda25460-56c0-4452-8e97-5c0657d6eaa1/scratchpad/question.wav)"
     ]
   }
 }

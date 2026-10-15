@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { transcribe } from '../api/audio'
 import { errorMessage } from '../api/client'
 import { browserCanListen, listen } from '../lib/browserDictation'
-import { canRecord, startRecording, type Recording } from '../lib/recorder'
+import { canRecord, startRecording, warmUpAudio, type Recording } from '../lib/recorder'
 
 export const MicIcon = () => (
   <svg
@@ -79,6 +79,7 @@ export default function DictationButton({ onText, serverStt, disabled }: Props) 
 
   const start = async () => {
     setError(null)
+    warmUpAudio()
     if (serverStt) {
       try {
         recording.current = await startRecording({
