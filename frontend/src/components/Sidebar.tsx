@@ -6,11 +6,13 @@ import {
   useDeleteConversation,
   useUpdateConversation,
 } from '../hooks/useConversations'
+import { useMe } from '../hooks/useAuth'
 import { useDebounced } from '../hooks/useDebounced'
 import { groupByDate } from '../lib/dates'
 import type { Conversation } from '../types/api'
 import ConversationItem from './ConversationItem'
-import { BookIcon, MenuIcon, PlusIcon, SearchIcon, SparkIcon, XIcon } from './icons'
+import { BookIcon, MenuIcon, PencilIcon, PlusIcon, SearchIcon, SparkIcon, XIcon } from './icons'
+import SidebarChannels from './SidebarChannels'
 import UserMenu from './UserMenu'
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
 export default function Sidebar({ open, onClose, isMobile }: Props) {
   const activeId = useMatch('/c/:id')?.params.id
   const navigate = useNavigate()
+  const me = useMe()
   const [search, setSearch] = useState('')
   const query = useDebounced(search.trim(), 250)
   const searching = query.length > 0
@@ -138,6 +141,21 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             <SparkIcon />
             Models
           </NavLink>
+          <NavLink
+            to="/notes"
+            onClick={afterNavigate}
+            className={({ isActive }) =>
+              `flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm ${
+                isActive
+                  ? 'bg-zinc-200 dark:bg-zinc-800'
+                  : 'text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
+              }`
+            }
+          >
+            <PencilIcon />
+            Notes
+          </NavLink>
+          <SidebarChannels isAdmin={me.data?.role === 'admin'} onNavigate={afterNavigate} />
           <div className="relative mt-2">
             <SearchIcon className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input

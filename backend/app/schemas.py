@@ -637,3 +637,108 @@ class CustomModelRead(BaseModel):
     is_owner: bool
     created_at: datetime
     updated_at: datetime
+
+
+# --- notes ------------------------------------------------------------------------
+
+
+class NoteSummary(BaseModel):
+    id: str
+    title: str
+    snippet: str
+    pinned: bool
+    updated_at: datetime
+
+
+class NoteRead(BaseModel):
+    id: str
+    title: str
+    content: str
+    pinned: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class NoteCreate(BaseModel):
+    title: str = Field(default="", max_length=200)
+    content: str = Field(default="", max_length=200_000)
+
+
+class NoteUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=200)
+    content: str | None = Field(default=None, max_length=200_000)
+    pinned: bool | None = None
+
+
+class NoteAiRequest(BaseModel):
+    """improve: tidy and clarify; summarize; continue: write what comes next;
+    custom: follow `instruction`. Works on `text` (a selection) or the whole note."""
+
+    action: Literal["improve", "summarize", "continue", "custom"]
+    model_id: str = Field(min_length=3)
+    text: str | None = Field(default=None, max_length=200_000)
+    instruction: str | None = Field(default=None, max_length=2000)
+
+
+# --- channels -----------------------------------------------------------------------
+
+
+class ChannelRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    created_at: datetime
+
+
+class ChannelWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=500)
+
+
+class ReactionSummary(BaseModel):
+    emoji: str
+    count: int
+    mine: bool
+
+
+class ChannelMessageRead(BaseModel):
+    id: int
+    channel_id: str
+    user_id: str | None
+    # The person's name, or the model's for an AI reply.
+    author: str
+    model_id: str | None
+    content: str
+    reply_to: int | None
+    deleted: bool
+    edited: bool
+    reactions: list[ReactionSummary]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChannelMessagePage(BaseModel):
+    messages: list[ChannelMessageRead]
+    # Older messages exist (load with ?before=<first id>).
+    has_more: bool = False
+    # Server time to pass as ?since= on the next poll.
+    now: datetime
+
+
+class ChannelMessageWrite(BaseModel):
+    content: str = Field(min_length=1, max_length=8000)
+    reply_to: int | None = None
+
+
+class ChannelMessageEdit(BaseModel):
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class ReactionToggle(BaseModel):
+    emoji: Literal["👍", "❤️", "😂", "🎉", "🤔", "👀"]
+
+
+class ChannelAiRequest(BaseModel):
+    model_id: str = Field(min_length=3)
+    # The message that mentioned the model; the reply quotes it.
+    message_id: int

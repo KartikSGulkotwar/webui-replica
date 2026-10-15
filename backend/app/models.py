@@ -312,3 +312,76 @@ class GeneratedImage(SQLModel, table=True):
     mime: str = Field(max_length=50)
     data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class Note(SQLModel, table=True):
+    """A user's own markdown note (Notes page)."""
+
+    __tablename__ = "notes"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    owner_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    title: str = Field(default="", max_length=200)
+    content: str = Field(default="", sa_column=Column(Text, nullable=False, server_default=""))
+    pinned: bool = Field(
+        default=False, sa_column_kwargs={"server_default": sa.false(), "nullable": False}
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class Channel(SQLModel, table=True):
+    """A shared chat room every approved user can read and post in."""
+
+    __tablename__ = "channels"
+
+    id: str = Field(default_factory=new_id, primary_key=True, max_length=32)
+    name: str = Field(max_length=80, unique=True)
+    description: str = Field(default="", max_length=500)
+    created_by: str | None = Field(default=None, max_length=32)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class ChannelMessage(SQLModel, table=True):
+    __tablename__ = "channel_messages"
+
+    # Autoincrement keeps messages in order and makes a cheap "newer than" cursor.
+    id: int | None = Field(default=None, primary_key=True)
+    channel_id: str = Field(
+        sa_column=Column(
+            String(32), ForeignKey("channels.id", ondelete="CASCADE"), nullable=False, index=True
+        )
+    )
+    # A person's message has user_id; a model's reply has model_id (and the
+    # user_id of whoever asked for it in asked_by).
+    user_id: str | None = Field(default=None, max_length=32, index=True)
+    model_id: str | None = Field(default=None, max_length=300)
+    asked_by: str | None = Field(default=None, max_length=32)
+    content: str = Field(sa_column=Column(Text, nullable=False))
+    reply_to: int | None = Field(default=None)
+    deleted: bool = Field(
+        default=False, sa_column_kwargs={"server_default": sa.false(), "nullable": False}
+    )
+    created_at: datetime = Field(default_factory=utcnow)
+    # Bumped by edits, deletes and reactions, so polling clients see the change.
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
+    edited_at: datetime | None = Field(default=None)
+
+
+class ChannelReaction(SQLModel, table=True):
+    __tablename__ = "channel_reactions"
+
+    message_id: int = Field(
+        sa_column=Column(
+            sa.Integer,
+            ForeignKey("channel_messages.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    user_id: str = Field(max_length=32, primary_key=True)
+    emoji: str = Field(max_length=16, primary_key=True)
+    created_at: datetime = Field(default_factory=utcnow)

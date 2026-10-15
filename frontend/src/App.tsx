@@ -13,6 +13,8 @@ const AccountPage = lazy(() => import('./pages/AccountPage'))
 const ArchivedPage = lazy(() => import('./pages/ArchivedPage'))
 const KnowledgePage = lazy(() => import('./pages/KnowledgePage'))
 const MemoryPage = lazy(() => import('./pages/MemoryPage'))
+const NotesPage = lazy(() => import('./pages/NotesPage'))
+const ChannelPage = lazy(() => import('./pages/ChannelPage'))
 const ModelsPage = lazy(() => import('./pages/ModelsPage'))
 
 function Lazy({ children }: { children: ReactNode }) {
@@ -62,6 +64,22 @@ export default function App() {
             element={
               <Lazy>
                 <ModelsPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/notes/:id?"
+            element={
+              <Lazy>
+                <NotesPage />
+              </Lazy>
+            }
+          />
+          <Route
+            path="/channels/:id"
+            element={
+              <Lazy>
+                <ChannelPage />
               </Lazy>
             }
           />

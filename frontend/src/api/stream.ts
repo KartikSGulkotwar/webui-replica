@@ -73,3 +73,45 @@ export async function streamChat(
   parser.feed(decoder.decode())
   parser.flush()
 }
+
+/** A one-off streamed AI text (notes, channels): calls onDelta as it arrives,
+ * resolves with the whole text, rejects on an error event. */
+export async function streamText(
+  path: string,
+  body: unknown,
+  { signal, onDelta }: { signal?: AbortSignal; onDelta: (delta: string) => void },
+): Promise<string> {
+  const resp = await fetch(apiUrl(path), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+    signal,
+  })
+  if (!resp.ok) throw await toApiError(resp)
+  if (!resp.body) throw new Error('This browser does not support streaming responses')
+  let text = ''
+  let failure: string | null = null
+  const parser = createSSEParser((data) => {
+    try {
+      const event = JSON.parse(data) as { delta?: string; error?: string }
+      if (event.delta) {
+        text += event.delta
+        onDelta(event.delta)
+      }
+      if (event.error) failure = event.error
+    } catch {
+      // ignore malformed events
+    }
+  })
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parser.feed(decoder.decode(value, { stream: true }))
+  }
+  parser.feed(decoder.decode())
+  parser.flush()
+  if (failure) throw new Error(failure)
+  return text
+}

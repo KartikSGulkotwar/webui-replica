@@ -401,3 +401,54 @@ export interface AudioSettings {
   stt: SpeechPart
   tts: SpeechPart
 }
+
+export interface NoteSummary {
+  id: string
+  title: string
+  snippet: string
+  pinned: boolean
+  updated_at: string
+}
+
+export interface Note {
+  id: string
+  title: string
+  content: string
+  pinned: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type NoteAiAction = 'improve' | 'summarize' | 'continue' | 'custom'
+
+export interface Channel {
+  id: string
+  name: string
+  description: string
+  created_at: string
+}
+
+export interface ChannelMessage {
+  id: number
+  channel_id: string
+  user_id: string | null
+  /** The person's name, or the model's for an AI reply. */
+  author: string
+  model_id: string | null
+  content: string
+  reply_to: number | null
+  deleted: boolean
+  edited: boolean
+  reactions: { emoji: string; count: number; mine: boolean }[]
+  created_at: string
+  updated_at: string
+}
+
+export interface ChannelMessagePage {
+  messages: ChannelMessage[]
+  has_more: boolean
+  /** Server time to pass as `since` on the next poll. */
+  now: string
+}
+
+export const REACTIONS = ['👍', '❤️', '😂', '🎉', '🤔', '👀'] as const

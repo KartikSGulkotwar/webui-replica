@@ -3,7 +3,7 @@ from dataclasses import asdict
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
-from sqlmodel import col, delete, func, select
+from sqlmodel import col, delete, func, or_, select
 
 from app.analytics import leaderboard, usage_report
 from app.app_settings import get_admin_settings, save_admin_settings
@@ -14,6 +14,8 @@ from app.db import SessionDep
 from app.images.engines import ImageError, generate
 from app.images.service import image_config, load_image_settings, save_image_settings
 from app.models import (
+    ChannelMessage,
+    ChannelReaction,
     Conversation,
     ConversationAttachment,
     CustomModel,
@@ -24,6 +26,7 @@ from app.models import (
     Memory,
     Message,
     ModelSetting,
+    Note,
     OAuthAccount,
     SharedChat,
     User,
@@ -116,6 +119,17 @@ def delete_user(user_id: str, session: SessionDep, admin: AdminUserDep) -> Respo
     session.exec(delete(OAuthAccount).where(OAuthAccount.user_id == user.id))
     session.exec(delete(Memory).where(Memory.owner_id == user.id))
     session.exec(delete(GeneratedImage).where(GeneratedImage.owner_id == user.id))
+    session.exec(delete(Note).where(Note.owner_id == user.id))
+    theirs = select(ChannelMessage.id).where(
+        or_(ChannelMessage.user_id == user.id, ChannelMessage.asked_by == user.id)
+    )
+    session.exec(delete(ChannelReaction).where(col(ChannelReaction.message_id).in_(theirs)))
+    session.exec(delete(ChannelReaction).where(ChannelReaction.user_id == user.id))
+    session.exec(
+        delete(ChannelMessage).where(
+            or_(ChannelMessage.user_id == user.id, ChannelMessage.asked_by == user.id)
+        )
+    )
     session.delete(user)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

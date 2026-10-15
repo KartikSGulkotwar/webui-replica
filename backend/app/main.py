@@ -16,6 +16,7 @@ from app.routers import (
     admin,
     audio,
     auth,
+    channels,
     chat,
     conversations,
     custom_models,
@@ -24,6 +25,7 @@ from app.routers import (
     knowledge,
     memories,
     models,
+    notes,
     providers,
     shared,
 )
@@ -88,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(memories.router)
     app.include_router(images.router)
     app.include_router(audio.router)
+    app.include_router(notes.router)
+    app.include_router(channels.router)
 
     # On Vercel the build step puts the compiled frontend here and the app serves
     # it (Vercel moves it to its CDN). Docker and local dev use nginx/Vite instead.
