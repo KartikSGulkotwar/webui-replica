@@ -203,7 +203,7 @@ TOOLS: dict[str, Tool] = {
                 "Download a public web page and return its readable text (up to ~8000 characters). "
                 "Use when the user gives a URL or asks about a specific page's content."
             ),
-            summary="Read the text of a public web page",
+            summary="Reads a page from a link you give it (to search the web, use Web search)",
             parameters={
                 "type": "object",
                 "properties": {"url": {"type": "string", "description": "Full http(s) URL"}},
