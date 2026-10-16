@@ -4,7 +4,9 @@ A self-hosted AI chat app that talks to **Ollama**, **Anthropic's Claude** (nati
 
 **Live demo: [webui-replica.vercel.app](https://webui-replica.vercel.app)** · runs on Groq's free tier, so Ollama shows as configured but offline (it needs a machine you control). For the full experience, run it locally with `docker compose up`.
 
-![Switching from Ollama to an OpenAI-compatible provider in the same conversation](docs/images/provider-switch.gif)
+![A 70-second tour of WebUI Replica: streaming chat, web search with cited sources, tools, comparing models side by side, the blind Arena, image generation, notes with AI, channels with an @mentioned model, light mode and translations](docs/images/demo.gif)
+
+<sub>70-second tour (real replies from Groq's models, not sped up). [Full-quality video (MP4, 1 MB)](docs/demo.mp4)</sub>
 
 ## Features
 
