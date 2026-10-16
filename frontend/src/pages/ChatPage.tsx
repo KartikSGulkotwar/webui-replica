@@ -297,14 +297,14 @@ export default function ChatPage() {
           <button
             type="button"
             onClick={addExtra}
-            className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            className="hidden sm:block rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label={t('chat.compare')}
             title={t('chat.compare')}
           >
             <PlusIcon />
           </button>
         )}
-        <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500">
+        <div className="min-w-0 flex-1 truncate text-center text-sm text-zinc-500 max-sm:invisible">
           {conversation.data?.title}
         </div>
         {!notFound && (

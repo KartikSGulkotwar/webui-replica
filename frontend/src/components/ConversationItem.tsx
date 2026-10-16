@@ -17,7 +17,7 @@ interface Props {
 type Mode = 'view' | 'rename' | 'confirm-delete'
 
 const iconButton =
-  'rounded p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-700 dark:hover:text-zinc-100'
+  'rounded p-2 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-700 dark:hover:text-zinc-100 md:p-1'
 const menuItem =
   'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'
 

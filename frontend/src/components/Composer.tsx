@@ -77,7 +77,9 @@ export default function Composer({
   return (
     <form onSubmit={submit} className="mx-auto w-full max-w-3xl px-3 pb-3 sm:px-4 sm:pb-4">
       {above}
-      <div className="flex items-end gap-2 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm focus-within:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-600">
+      {/* Phones: the text box gets the whole first row and the buttons go underneath;
+          wider screens keep everything on one row. */}
+      <div className="flex flex-wrap items-end gap-1 rounded-2xl border border-zinc-200 bg-white p-2 shadow-sm focus-within:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:focus-within:border-zinc-600 sm:flex-nowrap sm:gap-2">
         {leading}
         <textarea
           ref={ref}
@@ -87,8 +89,9 @@ export default function Composer({
           rows={1}
           autoFocus
           placeholder={disabled && disabledReason ? disabledReason : t('composer.placeholder')}
-          className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-zinc-400"
+          className="order-first max-h-[200px] min-w-0 basis-full resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-zinc-400 sm:order-none sm:basis-auto sm:flex-1"
         />
+        <span className="flex-1 sm:hidden" aria-hidden="true" />
         {trailing?.(addText)}
         {isStreaming ? (
           <button

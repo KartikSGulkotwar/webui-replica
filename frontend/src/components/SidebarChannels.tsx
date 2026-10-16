@@ -29,7 +29,7 @@ export default function SidebarChannels({
           <button
             type="button"
             onClick={() => setCreating(true)}
-            className="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
             aria-label={t('nav.newChannel')}
             title={t('nav.newChannel')}
           >
