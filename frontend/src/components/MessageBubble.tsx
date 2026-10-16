@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState, type ReactNode } fro
 import type { ImageRef, Rating, Role, Source, ToolInfo, ToolTrace } from '../types/api'
 import { normalizeCitations } from '../lib/citations'
 import GeneratedImages from './GeneratedImages'
+import { useT } from '../lib/i18n'
 import ReadAloudButton from './ReadAloudButton'
 import SourcesList from './SourcesList'
 import ToolCallsView from './ToolCallsView'
@@ -76,9 +77,10 @@ function ActionButton({
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
+  const t = useT()
   return (
     <ActionButton
-      label={copied ? 'Copied' : 'Copy'}
+      label={copied ? t('msg.copied') : t('msg.copy')}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(text)
@@ -154,8 +156,9 @@ function EditBox({
 
 function FeedbackComment({ onSubmit }: { onSubmit: (comment: string) => void }) {
   const [comment, setComment] = useState('')
+  const t = useT()
   const [sent, setSent] = useState(false)
-  if (sent) return <p className="text-xs text-zinc-500">Thanks for the feedback.</p>
+  if (sent) return <p className="text-xs text-zinc-500">{t('msg.feedbackThanks')}</p>
   return (
     <form
       onSubmit={(e) => {
@@ -169,7 +172,7 @@ function FeedbackComment({ onSubmit }: { onSubmit: (comment: string) => void }) 
         value={comment}
         onChange={(e) => setComment(e.target.value)}
         maxLength={1000}
-        placeholder="What went wrong? (optional)"
+        placeholder={t('msg.feedbackPlaceholder')}
         aria-label="Feedback comment"
         className="min-w-0 flex-1 rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
       />
@@ -177,7 +180,7 @@ function FeedbackComment({ onSubmit }: { onSubmit: (comment: string) => void }) 
         type="submit"
         className="rounded-lg border border-zinc-300 px-2 py-1 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
       >
-        Send
+        {t('msg.feedbackSend')}
       </button>
     </form>
   )
@@ -195,6 +198,7 @@ function MessageBubble({
   actions,
 }: Props) {
   const [editing, setEditing] = useState(false)
+  const t = useT()
   const [askComment, setAskComment] = useState(false)
 
   if (role === 'user') {
@@ -221,7 +225,11 @@ function MessageBubble({
           <div className="flex gap-0.5 opacity-100 transition-opacity md:opacity-0 md:focus-within:opacity-100 md:group-hover:opacity-100">
             <CopyButton text={content} />
             {actions.onEdit && (
-              <ActionButton label="Edit" onClick={() => setEditing(true)} disabled={actions.busy}>
+              <ActionButton
+                label={t('msg.edit')}
+                onClick={() => setEditing(true)}
+                disabled={actions.busy}
+              >
                 <PencilIcon width={15} height={15} />
               </ActionButton>
             )}
@@ -282,7 +290,7 @@ function MessageBubble({
             {content && <ReadAloudButton text={text} />}
             {actions.onRegenerate && (
               <ActionButton
-                label="Regenerate"
+                label={t('msg.regenerate')}
                 onClick={actions.onRegenerate}
                 disabled={actions.busy}
               >
@@ -292,14 +300,14 @@ function MessageBubble({
             {actions.onRate && (
               <>
                 <ActionButton
-                  label="Good response"
+                  label={t('msg.good')}
                   onClick={() => rate(1)}
                   active={actions.rating === 1}
                 >
                   <ThumbUpIcon width={15} height={15} />
                 </ActionButton>
                 <ActionButton
-                  label="Bad response"
+                  label={t('msg.bad')}
                   onClick={() => rate(-1)}
                   active={actions.rating === -1}
                 >

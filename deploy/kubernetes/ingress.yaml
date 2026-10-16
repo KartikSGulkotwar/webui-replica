@@ -1,0 +1,36 @@
+# Public entry point (ingress-nginx). Set your host, and a TLS secret, e.g.
+# from cert-manager. /api goes straight to the backend; everything else to
+# the frontend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webui
+  annotations:
+    # Chat replies stream as Server-Sent Events: don't buffer, allow long reads.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: 12m
+    # cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: nginx
+  # tls:
+  #   - hosts: [webui.example.com]
+  #     secretName: webui-tls
+  rules:
+    - host: webui.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  name: http

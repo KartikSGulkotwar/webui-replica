@@ -29,6 +29,7 @@ import PageHeader from '../components/PageHeader'
 import { useMe } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useModels } from '../hooks/useModels'
+import { useT } from '../lib/i18n'
 import { REACTIONS, type Channel, type ChannelMessage, type ModelInfo } from '../types/api'
 
 const Markdown = lazy(() => import('../components/Markdown'))
@@ -254,6 +255,7 @@ function ChannelComposer({
   disabled?: boolean
 }) {
   const [text, setText] = useState('')
+  const t = useT()
   const [query, setQuery] = useState<string | null>(null)
   const [active, setActive] = useState(0)
   const [sending, setSending] = useState(false)
@@ -386,7 +388,7 @@ function ChannelComposer({
           onBlur={() => setQuery(null)}
           rows={1}
           disabled={disabled}
-          placeholder="Message the channel — type @ to ask a model"
+          placeholder={t('channel.placeholder')}
           aria-label="Message"
           className="max-h-[160px] flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-zinc-400"
         />
@@ -489,6 +491,7 @@ function ChannelSettings({ channel, onClose }: { channel: Channel; onClose: () =
 export default function ChannelPage() {
   const { id } = useParams<{ id: string }>()
   const me = useMe()
+  const t = useT()
   const channels = useQuery({ queryKey: ['channels'], queryFn: listChannels })
   const channel = channels.data?.find((c) => c.id === id)
   const models = useModels()
@@ -670,9 +673,7 @@ export default function ChannelPage() {
           )}
           {loading && <p className="text-center text-sm text-zinc-500">Loading…</p>}
           {!loading && ordered.length === 0 && (
-            <p className="py-10 text-center text-sm text-zinc-500">
-              No messages yet. Say hello, or type <strong>@</strong> to bring a model in.
-            </p>
+            <p className="py-10 text-center text-sm text-zinc-500">{t('channel.empty')}</p>
           )}
           <div className="space-y-1" aria-label="Messages" aria-live="polite">
             {ordered.map((m) => {

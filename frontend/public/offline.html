@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090b" />
+    <title>Offline · WebUI Replica</title>
+    <style>
+      :root { color-scheme: light dark; --bg: #ffffff; --fg: #18181b; --muted: #71717a; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #09090b; --fg: #f4f4f5; --muted: #a1a1aa; } }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; align-items: center; justify-content: center; padding: 24px;
+        background: var(--bg); color: var(--fg); text-align: center;
+        font: 16px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+      }
+      img { width: 64px; height: 64px; border-radius: 14px; }
+      h1 { font-size: 20px; margin: 16px 0 4px; }
+      p { color: var(--muted); margin: 0 0 20px; max-width: 320px; }
+      button {
+        font: inherit; color: #fff; background: #4f46e5; border: 0; border-radius: 10px;
+        padding: 10px 20px; cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icons/icon-192.png" alt="" />
+      <h1>You’re offline</h1>
+      <p>WebUI Replica needs an internet connection to reach the AI models. Your chats are safe on the server.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      // Come back by itself when the connection returns.
+      addEventListener('online', () => location.reload())
+    </script>
+  </body>
+</html>

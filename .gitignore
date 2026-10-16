@@ -17,3 +17,6 @@ dist/
 
 # Frontend build copied in by app/vercel_build.py
 backend/static/
+
+# Kubernetes secrets (copy deploy/kubernetes/secrets.env.example)
+deploy/kubernetes/secrets.env

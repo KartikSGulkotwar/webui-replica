@@ -14,6 +14,7 @@ import ConversationItem from './ConversationItem'
 import { BookIcon, MenuIcon, PencilIcon, PlusIcon, SearchIcon, SparkIcon, XIcon } from './icons'
 import SidebarChannels from './SidebarChannels'
 import UserMenu from './UserMenu'
+import { useT } from '../lib/i18n'
 
 interface Props {
   open: boolean
@@ -26,6 +27,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
   const activeId = useMatch('/c/:id')?.params.id
   const navigate = useNavigate()
   const me = useMe()
+  const t = useT()
   const [search, setSearch] = useState('')
   const query = useDebounced(search.trim(), 250)
   const searching = query.length > 0
@@ -111,7 +113,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             className="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             <PlusIcon />
-            New chat
+            {t('nav.newChat')}
           </Link>
           <NavLink
             to="/knowledge"
@@ -125,7 +127,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             }
           >
             <BookIcon />
-            Knowledge
+            {t('nav.knowledge')}
           </NavLink>
           <NavLink
             to="/models"
@@ -139,7 +141,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             }
           >
             <SparkIcon />
-            Models
+            {t('nav.models')}
           </NavLink>
           <NavLink
             to="/notes"
@@ -153,7 +155,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
             }
           >
             <PencilIcon />
-            Notes
+            {t('nav.notes')}
           </NavLink>
           <SidebarChannels isAdmin={me.data?.role === 'admin'} onNavigate={afterNavigate} />
           <div className="relative mt-2">
@@ -163,8 +165,8 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Escape' && setSearch('')}
-              placeholder="Search chats"
-              aria-label="Search chats"
+              placeholder={t('nav.searchChats')}
+              aria-label={t('nav.searchChats')}
               className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-7 text-sm outline-none placeholder:text-zinc-400 focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 [&::-webkit-search-cancel-button]:hidden"
             />
             {search && (
@@ -190,7 +192,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
           )}
           {conversations.isError && (
             <div className="px-2 pt-2 text-sm text-red-500">
-              <p>Couldn’t load conversations.</p>
+              <p>{t('nav.loadFailed')}</p>
               <p className="text-xs text-zinc-500">{errorMessage(conversations.error)}</p>
               <button
                 type="button"
@@ -203,7 +205,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
           )}
           {conversations.isSuccess && list.length === 0 && (
             <p className="px-2 pt-2 text-sm text-zinc-500">
-              {searching ? `No chats match “${query}”.` : 'No conversations yet.'}
+              {searching ? t('nav.noMatches', { query }) : t('nav.noConversations')}
             </p>
           )}
           {searching && list.length > 0 && (
@@ -222,7 +224,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
           )}
           {groups.map(({ group, items }) => (
             <div key={group} className="mt-3 first:mt-1">
-              <h2 className="px-2 pb-1 text-xs font-medium text-zinc-500">{group}</h2>
+              <h2 className="px-2 pb-1 text-xs font-medium text-zinc-500">{t(`dates.${group}`)}</h2>
               <ul className="space-y-0.5">{items.map(item)}</ul>
             </div>
           ))}

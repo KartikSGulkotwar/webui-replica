@@ -6,6 +6,7 @@ import App from './App'
 import { ApiError } from './api/client'
 import './index.css'
 import { applyTheme, getStoredTheme } from './lib/theme'
+import I18nProvider from './components/I18nProvider'
 
 applyTheme(getStoredTheme())
 
@@ -27,12 +28,22 @@ const queryClient: QueryClient = new QueryClient({
   },
 })
 
+// Installable app: the service worker loads the app fast and shows an offline
+// page without a connection (production builds only; it would cache dev files).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
+      <I18nProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </I18nProvider>
     </QueryClientProvider>
   </StrictMode>,
 )

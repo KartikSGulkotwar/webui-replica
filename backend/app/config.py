@@ -13,6 +13,17 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     # Run Alembic migrations on startup. Tests turn this off and create tables directly.
     auto_migrate: bool = True
+    # On startup, keep retrying an unreachable database this long before failing.
+    database_wait_seconds: float = 60.0
+    # Observability: "json", "text", or "auto" (JSON unless in a terminal).
+    log_format: str = "auto"
+    log_level: str = "INFO"
+    # Prometheus scrapes /api/metrics with "Authorization: Bearer <token>";
+    # blank turns the endpoint off.
+    metrics_token: str = ""
+    # OpenTelemetry tracing (standard variable names); blank = off.
+    otel_exporter_otlp_endpoint: str = ""
+    otel_service_name: str = "webui-replica"
     # --- accounts -------------------------------------------------------------
     # Signs session tokens. If empty, derived from ENCRYPTION_KEY; if that is also
     # empty, a random per-process key is used (sessions end on restart).

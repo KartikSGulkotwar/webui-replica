@@ -8,6 +8,17 @@ body,
   height: 100%;
 }
 
+/* Installed on a phone, the app draws under the status bar and home indicator:
+   keep content inside the safe area (all zero in a normal browser tab). */
+#root {
+  box-sizing: border-box;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+body {
+  @apply bg-white dark:bg-zinc-950;
+}
+
 /* Blinking caret after the last streamed token. */
 .streaming-cursor .prose > :last-child::after {
   content: '▍';

@@ -12,6 +12,7 @@ import {
 import { PencilIcon, TrashIcon } from '../components/icons'
 import PageHeader from '../components/PageHeader'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useT } from '../lib/i18n'
 import type { MemoryItem, MemoryList } from '../types/api'
 
 const key = ['memories'] as const
@@ -112,7 +113,8 @@ function Row({ memory }: { memory: MemoryItem }) {
 }
 
 export default function MemoryPage() {
-  useDocumentTitle('Memory')
+  const t = useT()
+  useDocumentTitle(t('page.memory'))
   const queryClient = useQueryClient()
   const memories = useQuery({ queryKey: key, queryFn: listMemories })
   const [draft, setDraft] = useState('')
@@ -151,7 +153,7 @@ export default function MemoryPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Memory" />
+      <PageHeader title={t('page.memory')} />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
           <p className="text-sm text-zinc-500">

@@ -8,12 +8,14 @@ import {
   useUpdateConversation,
 } from '../hooks/useConversations'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
+import { useT } from '../lib/i18n'
 
 const button =
   'rounded-lg border border-zinc-300 px-2.5 py-1 text-xs hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800'
 
 export default function ArchivedPage() {
-  useDocumentTitle('Archived chats')
+  const t = useT()
+  useDocumentTitle(t('page.archived'))
   const archived = useConversations({ archived: true })
   const update = useUpdateConversation()
   const remove = useDeleteConversation()
@@ -21,7 +23,7 @@ export default function ArchivedPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Archived chats" />
+      <PageHeader title={t('page.archived')} />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-3 px-4 py-6">
           <p className="text-sm text-zinc-500">

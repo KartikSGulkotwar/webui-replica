@@ -1,0 +1,53 @@
+# WebUI Replica on Kubernetes:  kubectl apply -k deploy/kubernetes
+# Copy secrets.env.example to secrets.env and fill it in first (secrets.env is
+# git-ignored). Point the images at your registry in the `images:` list below.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: webui
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: webui-replica
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - backend.yaml
+  - frontend.yaml
+  - ingress.yaml
+  - network-policy.yaml
+  # Optional: a model server inside the cluster.
+  # - ollama.yaml
+  # Optional, needs the Prometheus Operator: scrape the backend's metrics.
+  # - service-monitor.yaml
+
+configMapGenerator:
+  - name: webui-config
+    literals:
+      - ENABLE_SIGNUP=true
+      - DEFAULT_USER_ROLE=pending
+      - LOG_FORMAT=json
+      # The ingress controller adds one X-Forwarded-For hop.
+      - TRUSTED_PROXY_HOPS=1
+      - CHAT_RATE_LIMIT_PER_MINUTE=20
+      - MAX_UPLOAD_MB=10
+      # e.g. https://webui.example.com (OAuth callbacks, links)
+      - PUBLIC_URL=
+      - FRONTEND_ORIGIN=
+      # In-cluster Ollama (enable ollama.yaml above), or leave blank.
+      - OLLAMA_BASE_URL=
+      # Tracing: e.g. http://otel-collector.observability:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=
+
+secretGenerator:
+  - name: webui-secrets
+    envs:
+      - secrets.env
+
+images:
+  - name: webui-replica-backend
+    newName: ghcr.io/kartiksgulkotwar/webui-replica-backend
+    newTag: latest
+  - name: webui-replica-frontend
+    newName: ghcr.io/kartiksgulkotwar/webui-replica-frontend
+    newTag: latest

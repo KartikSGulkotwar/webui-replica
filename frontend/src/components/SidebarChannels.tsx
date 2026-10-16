@@ -5,6 +5,7 @@ import { createChannel, listChannels } from '../api/channels'
 import { errorMessage } from '../api/client'
 import Dialog from './Dialog'
 import { PlusIcon } from './icons'
+import { useT } from '../lib/i18n'
 
 /** "Channels" in the sidebar; admins can add one. */
 export default function SidebarChannels({
@@ -15,21 +16,22 @@ export default function SidebarChannels({
   onNavigate: () => void
 }) {
   const channels = useQuery({ queryKey: ['channels'], queryFn: listChannels })
+  const t = useT()
   const [creating, setCreating] = useState(false)
   if (!channels.data?.length && !isAdmin) return null
   return (
     <div className="mt-2">
       <div className="flex items-center justify-between px-3 py-1">
         <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Channels
+          {t('nav.channels')}
         </span>
         {isAdmin && (
           <button
             type="button"
             onClick={() => setCreating(true)}
             className="rounded p-0.5 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="New channel"
-            title="New channel"
+            aria-label={t('nav.newChannel')}
+            title={t('nav.newChannel')}
           >
             <PlusIcon width={14} height={14} />
           </button>

@@ -30,6 +30,7 @@ import { canRecord, warmUpAudio } from '../lib/recorder'
 import { browserCanSpeak } from '../lib/speech'
 import { modelLabel } from '../lib/models'
 import { ARENA_MODEL_ID, type ConversationDetail, type Message, type Rating } from '../types/api'
+import { useT } from '../lib/i18n'
 
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>()
@@ -37,6 +38,7 @@ export default function ChatPage() {
   const models = modelsQuery.data?.models
   const config = useAppConfig()
   const me = useMe()
+  const t = useT()
   const { selected, select } = useSelectedModel(models, config.data?.default_model)
   // More models that answer side by side (not with the arena).
   const [extras, setExtras] = useState<string[]>([])
@@ -162,10 +164,11 @@ export default function ChatPage() {
     (modelsQuery.data?.providers.find((x) => x.id === selected.provider_id)?.ok ?? true)
 
   let disabledReason: string | undefined
-  if (modelsQuery.isLoading) disabledReason = 'Loading models…'
-  else if (modelsQuery.isError) disabledReason = 'Backend unreachable'
-  else if (!selected) disabledReason = 'No models available'
-  else if (!selectedProviderOk) disabledReason = `${selected.provider_name} is offline`
+  if (modelsQuery.isLoading) disabledReason = t('chat.loadingModels')
+  else if (modelsQuery.isError) disabledReason = t('chat.unreachable')
+  else if (!selected) disabledReason = t('chat.noModels')
+  else if (!selectedProviderOk)
+    disabledReason = t('chat.providerOffline', { provider: selected.provider_name })
 
   const label = (modelId: string | null) => (modelId ? modelLabel(modelId, models) : null)
   const replyActions = (m: Message, inLastGroup: boolean, group: Message[]): MessageActions => ({
@@ -295,8 +298,8 @@ export default function ChatPage() {
             type="button"
             onClick={addExtra}
             className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
-            aria-label="Compare with another model"
-            title="Compare with another model"
+            aria-label={t('chat.compare')}
+            title={t('chat.compare')}
           >
             <PlusIcon />
           </button>
@@ -329,12 +332,12 @@ export default function ChatPage() {
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
           <p className="text-zinc-500">{errorMessage(conversation.error)}</p>
           <Link to="/" className="text-sm text-indigo-500 hover:underline">
-            Start a new chat
+            {t('chat.startNew')}
           </Link>
         </div>
       ) : id && conversation.isLoading ? (
         <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
-          Loading conversation…
+          {t('chat.loading')}
         </div>
       ) : isEmpty ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
@@ -344,15 +347,22 @@ export default function ChatPage() {
             </span>
           )}
           <h1 className="text-2xl font-semibold tracking-tight">
-            {selected?.provider_kind === 'custom' || isArena ? selected!.name : 'How can I help?'}
+            {selected?.provider_kind === 'custom' || isArena
+              ? selected!.name
+              : t('chat.howCanIHelp')}
           </h1>
           <p className="max-w-md text-sm text-zinc-500">
             {selected?.provider_kind === 'custom' || isArena
               ? (selected!.description ?? `${selected!.name} is ready.`)
               : extraModels.length
-                ? `${[selected!, ...extraModels].map((m) => m.name).join(', ')} will answer side by side.`
+                ? t('chat.sideBySide', {
+                    models: [selected!, ...extraModels].map((m) => m.name).join(', '),
+                  })
                 : selected
-                  ? `Chatting with ${selected.name} via ${selected.provider_name}. Switch models anytime from the menu above.`
+                  ? t('chat.chattingWith', {
+                      model: selected.name,
+                      provider: selected.provider_name,
+                    })
                   : (disabledReason ?? '')}
           </p>
           {draftSystemPrompt && (
@@ -440,7 +450,7 @@ export default function ChatPage() {
               onClick={() => run({ kind: 'regenerate' }, chosen, undefined, runOptions)}
               className="w-fit rounded-lg border border-zinc-300 px-3 py-1.5 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
             >
-              Get a reply
+              {t('chat.getReply')}
             </button>
           )}
         </ChatWindow>

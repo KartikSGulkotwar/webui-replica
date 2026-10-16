@@ -3,7 +3,9 @@ import { errorMessage } from '../api/client'
 import { exportAllConversations } from '../api/conversations'
 import { downloadFile } from '../lib/exportChat'
 import PageHeader from '../components/PageHeader'
+import LanguageSelect from '../components/LanguageSelect'
 import VoiceSettings from '../components/VoiceSettings'
+import { useT } from '../lib/i18n'
 import { useLogout, useMe, useUpdateMe } from '../hooks/useAuth'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
@@ -12,7 +14,8 @@ const input =
 const section = 'space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800'
 
 export default function AccountPage() {
-  useDocumentTitle('Account')
+  const t = useT()
+  useDocumentTitle(t('account.title'))
   const me = useMe()
   const logout = useLogout()
   const updateName = useUpdateMe()
@@ -63,7 +66,7 @@ export default function AccountPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Account" />
+      <PageHeader title={t('account.title')} />
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-xl space-y-4 px-4 py-6">
           <div className={section}>
@@ -82,7 +85,7 @@ export default function AccountPage() {
 
           {!user.is_guest && (
             <form onSubmit={saveName} className={section}>
-              <h2 className="font-semibold">Profile</h2>
+              <h2 className="font-semibold">{t('account.profile')}</h2>
               <div>
                 <label htmlFor="acct-name" className="mb-1 block text-sm font-medium">
                   Name
@@ -115,7 +118,7 @@ export default function AccountPage() {
           {!user.is_guest && (
             <form onSubmit={savePassword} className={section}>
               <h2 className="font-semibold">
-                {user.has_password ? 'Change password' : 'Set a password'}
+                {user.has_password ? t('account.changePassword') : t('account.setPassword')}
               </h2>
               {!user.has_password && (
                 <p className="text-sm text-zinc-500">
@@ -176,18 +179,20 @@ export default function AccountPage() {
           )}
 
           <div className={section}>
-            <h2 className="font-semibold">Voice</h2>
-            <p className="text-sm text-zinc-500">
-              How replies sound when you press 🔊 or use voice mode.
-            </p>
+            <h2 className="font-semibold">{t('account.voice')}</h2>
+            <p className="text-sm text-zinc-500">{t('account.voiceHint')}</p>
             <VoiceSettings />
           </div>
 
           <div className={section}>
-            <h2 className="font-semibold">Your data</h2>
-            <p className="text-sm text-zinc-500">
-              Download every chat (including archived ones) as a JSON file.
-            </p>
+            <h2 className="font-semibold">{t('account.language')}</h2>
+            <p className="text-sm text-zinc-500">{t('account.languageHint')}</p>
+            <LanguageSelect />
+          </div>
+
+          <div className={section}>
+            <h2 className="font-semibold">{t('account.data')}</h2>
+            <p className="text-sm text-zinc-500">{t('account.dataHint')}</p>
             <div className="flex items-center gap-3">
               <button
                 type="button"
@@ -195,7 +200,7 @@ export default function AccountPage() {
                 disabled={exporting}
                 className="rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
               >
-                {exporting ? 'Preparing…' : 'Export all chats'}
+                {exporting ? t('account.exporting') : t('account.export')}
               </button>
               {exportError && <span className="text-sm text-red-500">{exportError}</span>}
             </div>
@@ -206,7 +211,7 @@ export default function AccountPage() {
             onClick={() => logout.mutate(undefined)}
             className="w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
-            Sign out
+            {t('menu.signOut')}
           </button>
         </div>
       </div>

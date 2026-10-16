@@ -1,6 +1,10 @@
+import hmac
 from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from sqlalchemy import text
 from sqlmodel import Session
 
 from app import __version__
@@ -19,7 +23,33 @@ router = APIRouter(prefix="/api", tags=["health"])
 
 @router.get("/health")
 async def health() -> dict[str, str]:
+    """Liveness: the process is up."""
     return {"status": "ok", "version": __version__}
+
+
+@router.get("/ready")
+def ready(request: Request) -> Response:
+    """Readiness: the database answers. Load balancers stop sending traffic
+    while this fails."""
+    try:
+        with request.app.state.engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "unavailable", "database": "down"}, status_code=503)
+    return JSONResponse({"status": "ready", "database": "up"})
+
+
+@router.get("/metrics", include_in_schema=False)
+def metrics(request: Request) -> Response:
+    """Prometheus metrics, for scrapers holding METRICS_TOKEN. Each process keeps
+    its own counters; scrape every replica (Kubernetes does this per pod)."""
+    token = request.app.state.settings.metrics_token
+    given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if not hmac.compare_digest(given, token):
+        raise HTTPException(status_code=401, detail="Invalid metrics token")
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/config", response_model=AppConfig)

@@ -1,0 +1,18 @@
+# Optional, for the Prometheus Operator: scrape every backend pod's
+# /api/metrics with the METRICS_TOKEN from webui-secrets.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backend
+  endpoints:
+    - port: http
+      path: /api/metrics
+      interval: 30s
+      authorization:
+        credentials:
+          name: webui-secrets
+          key: METRICS_TOKEN

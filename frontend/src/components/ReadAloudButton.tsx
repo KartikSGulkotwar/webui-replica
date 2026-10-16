@@ -1,6 +1,7 @@
 import { useId, useState, useSyncExternalStore } from 'react'
 import { errorMessage } from '../api/client'
 import { useAppConfig } from '../hooks/useProviders'
+import { useT } from '../lib/i18n'
 import { browserCanSpeak, getSpeakingId, speak, stopSpeaking, subscribeSpeech } from '../lib/speech'
 
 const SpeakerIcon = () => (
@@ -28,6 +29,7 @@ const StopSquare = () => (
 /** Reads a reply aloud (the server's voice if set up, otherwise the browser's). */
 export default function ReadAloudButton({ text }: { text: string }) {
   const id = useId()
+  const t = useT()
   const config = useAppConfig()
   const speakingId = useSyncExternalStore(subscribeSpeech, getSpeakingId)
   const [error, setError] = useState<string | null>(null)
@@ -50,9 +52,9 @@ export default function ReadAloudButton({ text }: { text: string }) {
             ? 'text-red-500'
             : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100'
       }`}
-      aria-label={speaking ? 'Stop reading' : 'Read aloud'}
+      aria-label={speaking ? t('msg.stopReading') : t('msg.readAloud')}
       aria-pressed={speaking}
-      title={error ?? (speaking ? 'Stop' : 'Read aloud')}
+      title={error ?? (speaking ? t('msg.stopReading') : t('msg.readAloud'))}
     >
       {speaking ? <StopSquare /> : <SpeakerIcon />}
     </button>

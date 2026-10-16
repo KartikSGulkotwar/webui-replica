@@ -26,6 +26,7 @@ from app.images.service import (
 )
 from app.memory import memory_context, relevant_memories
 from app.models import DEFAULT_TITLE, Conversation, Message, utcnow
+from app.observability import ACTIVE_STREAMS, CHAT_REPLIES, LLM_TOKENS, TOOL_CALLS
 from app.providers.base import BaseProvider, ProviderError, RefusalError, split_model_id
 from app.providers.registry import RegistryDep
 from app.rag.service import (
@@ -278,6 +279,11 @@ async def stream_and_persist(
         for key in ("prompt_tokens", "completion_tokens"):
             if isinstance((more or {}).get(key), int):
                 usage[key] = usage.get(key, 0) + more[key]  # type: ignore[index]
+                LLM_TOKENS.labels(provider_label, key.removesuffix("_tokens")).inc(more[key])  # type: ignore[index]
+
+    provider_label = getattr(provider, "id", "unknown")  # metrics label
+    ended = "stopped"  # unless it finishes or fails below
+    ACTIVE_STREAMS.inc()
 
     specs = [
         ToolSpec(name=t.id, description=t.description, parameters=t.parameters) for t in tools or []
@@ -361,8 +367,10 @@ async def stream_and_persist(
                 if message_id is None and not "".join(parts).strip() and not trace:
                     # Nothing to show (some small models emit a tool call the
                     # server can't parse); say so rather than ending silently.
+                    ended = "empty"
                     yield sse({"error": "The model returned an empty reply. Try again."})
                     return
+                ended = "done"
                 done: dict = {"done": True, "usage": final.usage, "message_id": message_id}
                 if final.served_by and not blind:
                     done["model_id"] = answered_by
@@ -385,6 +393,7 @@ async def stream_and_persist(
                     outcome = await run_tool(call.name, call.arguments, tool_context)
                 else:
                     outcome = ToolOutcome(f"Tool '{call.name}' isn't enabled for this chat", True)
+                TOOL_CALLS.labels(call.name, "error" if outcome.error else "ok").inc()
                 shown = outcome.output[:TRACE_OUTPUT_CHARS]
                 trace.append(
                     {
@@ -414,18 +423,23 @@ async def stream_and_persist(
     except RefusalError as exc:
         # A declined reply isn't an answer: drop the partial text and tell the
         # browser to discard what it already showed.
+        ended = "declined"
         parts.clear()
         trace.clear()
         await run_in_threadpool(save)
         yield sse({"error": str(exc), "discard": True})
     except ProviderError as exc:
+        ended = "error"
         await run_in_threadpool(save)
         yield sse({"error": str(exc)})
     except Exception:
+        ended = "error"
         logger.exception("Chat stream failed for conversation %s", conversation_id)
         await run_in_threadpool(save)
         yield sse({"error": "Internal error while streaming the response"})
     finally:
+        ACTIVE_STREAMS.dec()
+        CHAT_REPLIES.labels(provider_label, ended).inc()
         # Client went away (cancellation/GeneratorExit): we can't await here,
         # so save synchronously.
         if not saved:

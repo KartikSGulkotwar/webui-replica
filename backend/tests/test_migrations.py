@@ -67,3 +67,33 @@ def test_upgrade_keeps_existing_data_postgres() -> None:
         conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
     engine.dispose()
     upgrade_with_existing_rows(POSTGRES_URL)
+
+
+@pytest.mark.skipif(not POSTGRES_URL, reason="set TEST_POSTGRES_URL to run against Postgres")
+def test_startup_lock_lets_one_replica_in_at_a_time() -> None:
+    """Replicas starting together take turns at migrations and seeding."""
+    import threading
+    import time
+
+    from sqlmodel import create_engine
+
+    from app.db import startup_lock
+
+    engine = create_engine(POSTGRES_URL)
+    inside: list[int] = []
+    overlap = []
+
+    def replica(n: int) -> None:
+        with startup_lock(engine):
+            inside.append(n)
+            if len(inside) > 1:
+                overlap.append(n)
+            time.sleep(0.2)
+            inside.remove(n)
+
+    threads = [threading.Thread(target=replica, args=(n,)) for n in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert overlap == []

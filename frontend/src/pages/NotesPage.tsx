@@ -17,6 +17,7 @@ import PageHeader from '../components/PageHeader'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { useModels, useSelectedModel } from '../hooks/useModels'
 import { useAppConfig } from '../hooks/useProviders'
+import { useT } from '../lib/i18n'
 import { downloadFile } from '../lib/exportChat'
 import type { Note, NoteAiAction, NoteSummary } from '../types/api'
 
@@ -39,6 +40,7 @@ function relative(iso: string): string {
 
 function NoteList({ activeId, onPick }: { activeId?: string; onPick: () => void }) {
   const [q, setQ] = useState('')
+  const t = useT()
   const notes = useQuery({ queryKey: ['notes', q], queryFn: () => listNotes(q) })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -59,7 +61,7 @@ function NoteList({ activeId, onPick }: { activeId?: string; onPick: () => void 
           disabled={create.isPending}
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
         >
-          <PlusIcon /> New note
+          <PlusIcon /> {t('notes.new')}
         </button>
         {create.error && <p className="text-xs text-red-500">{errorMessage(create.error)}</p>}
         <div className="relative">
@@ -68,8 +70,8 @@ function NoteList({ activeId, onPick }: { activeId?: string; onPick: () => void 
             type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search notes"
-            aria-label="Search notes"
+            placeholder={t('notes.search')}
+            aria-label={t('notes.search')}
             className="w-full rounded-lg border border-zinc-200 bg-white py-1.5 pl-8 pr-2 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950"
           />
         </div>
@@ -95,7 +97,7 @@ function NoteList({ activeId, onPick }: { activeId?: string; onPick: () => void 
                 {n.pinned && (
                   <PinIcon width={12} height={12} className="shrink-0 text-indigo-500" />
                 )}
-                <span className="truncate">{n.title || 'Untitled'}</span>
+                <span className="truncate">{n.title || t('notes.untitled')}</span>
               </span>
               <span className="mt-0.5 line-clamp-2 text-xs text-zinc-500">
                 {relative(n.updated_at)} · {n.snippet || 'Empty note'}
@@ -112,6 +114,7 @@ function NoteList({ activeId, onPick }: { activeId?: string; onPick: () => void 
 function Editor({ note }: { note: Note }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const t = useT()
   const models = useModels()
   const config = useAppConfig()
   const { selected } = useSelectedModel(models.data?.models, config.data?.default_model)
@@ -276,10 +279,10 @@ function Editor({ note }: { note: Note }) {
         </div>
         <span className="px-2 text-xs text-zinc-500" role="status">
           {saveState === 'saving'
-            ? 'Saving…'
+            ? t('notes.saving')
             : saveState === 'error'
               ? 'Not saved — retrying on next change'
-              : 'Saved'}
+              : t('notes.saved')}
         </span>
         <div className="relative">
           <button
@@ -351,7 +354,7 @@ function Editor({ note }: { note: Note }) {
           disabled={askInChat.isPending || !content.trim()}
           title="Start a chat about this note"
         >
-          💬 Ask in chat
+          {t('notes.askInChat')}
         </button>
         <button
           type="button"
@@ -473,12 +476,13 @@ export default function NotesPage() {
   const { id } = useParams<{ id: string }>()
   const note = useQuery({ queryKey: ['note', id], queryFn: () => getNote(id!), enabled: !!id })
   const [listOpen, setListOpen] = useState(!id)
+  const t = useT()
   useDocumentTitle(id ? undefined : 'Notes')
   useEffect(() => setListOpen(!id), [id])
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Notes" />
+      <PageHeader title={t('nav.notes')} />
       <div className="flex min-h-0 flex-1">
         <aside
           className={`w-full shrink-0 border-zinc-200 dark:border-zinc-800 md:block md:w-72 md:border-r ${
@@ -490,8 +494,7 @@ export default function NotesPage() {
         <section className={`min-w-0 flex-1 ${listOpen ? 'hidden md:block' : 'block'}`}>
           {!id ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm text-zinc-500">
-              Pick a note, or create one. Notes are private to you, saved as you type, and the ✨ AI
-              button can improve, summarize or continue them.
+              {t('notes.empty')}
             </div>
           ) : note.isLoading ? (
             <p className="p-6 text-sm text-zinc-500">Loading…</p>

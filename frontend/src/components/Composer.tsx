@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import { SendIcon, StopIcon } from './icons'
+import { useT } from '../lib/i18n'
 
 interface Props {
   onSend: (text: string) => void
@@ -36,6 +37,7 @@ export default function Composer({
   trailing,
 }: Props) {
   const [text, setText] = useState('')
+  const t = useT()
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -84,7 +86,7 @@ export default function Composer({
           onKeyDown={onKeyDown}
           rows={1}
           autoFocus
-          placeholder={disabled && disabledReason ? disabledReason : 'Send a message'}
+          placeholder={disabled && disabledReason ? disabledReason : t('composer.placeholder')}
           className="max-h-[200px] flex-1 resize-none bg-transparent px-2 py-1.5 outline-none placeholder:text-zinc-400"
         />
         {trailing?.(addText)}
@@ -93,7 +95,7 @@ export default function Composer({
             type="button"
             onClick={onStop}
             className="rounded-xl bg-zinc-900 p-2 text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            aria-label="Stop generating"
+            aria-label={t('composer.stop')}
             title="Stop"
           >
             <StopIcon />
@@ -103,16 +105,14 @@ export default function Composer({
             type="submit"
             disabled={!canSend}
             className="rounded-xl bg-indigo-600 p-2 text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-zinc-300 dark:disabled:bg-zinc-700"
-            aria-label="Send message"
+            aria-label={t('composer.send')}
             title="Send (Enter)"
           >
             <SendIcon />
           </button>
         )}
       </div>
-      <p className="mt-1.5 text-center text-xs text-zinc-500">
-        Enter to send · Shift+Enter for a new line
-      </p>
+      <p className="mt-1.5 text-center text-xs text-zinc-500">{t('composer.hint')}</p>
     </form>
   )
 }

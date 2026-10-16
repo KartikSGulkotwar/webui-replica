@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLogout, useMe } from '../hooks/useAuth'
+import { isInstalled } from '../lib/install'
 import { SettingsIcon } from './icons'
+import InstallDialog from './InstallDialog'
+import { useT } from '../lib/i18n'
 
 const item =
   'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800'
@@ -9,7 +12,9 @@ const item =
 export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
   const me = useMe()
   const logout = useLogout()
+  const t = useT()
   const [open, setOpen] = useState(false)
+  const [installing, setInstalling] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -41,18 +46,31 @@ export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
           role="menu"
         >
           <Link to="/account" onClick={go} className={item} role="menuitem">
-            Account
+            {t('menu.account')}
           </Link>
           <Link to="/memory" onClick={go} className={item} role="menuitem">
-            Memory
+            {t('menu.memory')}
           </Link>
           <Link to="/archived" onClick={go} className={item} role="menuitem">
-            Archived chats
+            {t('menu.archived')}
           </Link>
+          {!isInstalled() && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setInstalling(true)
+              }}
+              className={item}
+              role="menuitem"
+            >
+              {t('menu.install')}
+            </button>
+          )}
           {user.role === 'admin' && (
             <Link to="/admin/users" onClick={go} className={item} role="menuitem">
               <SettingsIcon />
-              Admin panel
+              {t('menu.admin')}
             </Link>
           )}
           <button
@@ -61,7 +79,7 @@ export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
             className={`${item} text-red-600 dark:text-red-400`}
             role="menuitem"
           >
-            Sign out
+            {t('menu.signOut')}
           </button>
         </div>
       )}
@@ -78,10 +96,15 @@ export default function UserMenu({ onNavigate }: { onNavigate: () => void }) {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{user.name}</span>
           <span className="block truncate text-xs text-zinc-500">
-            {user.is_guest ? 'Guest' : user.role === 'admin' ? 'Admin' : user.email}
+            {user.is_guest
+              ? t('menu.guest')
+              : user.role === 'admin'
+                ? t('menu.adminRole')
+                : user.email}
           </span>
         </span>
       </button>
+      {installing && <InstallDialog onClose={() => setInstalling(false)} />}
     </div>
   )
 }
