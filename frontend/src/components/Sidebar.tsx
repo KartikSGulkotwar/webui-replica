@@ -82,7 +82,7 @@ export default function Sidebar({ open, onClose, isMobile }: Props) {
         <div className="fixed inset-0 z-30 bg-black/40" onClick={onClose} aria-hidden="true" />
       )}
       <aside
-        className={`flex h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 ${
+        className={`flex h-full w-64 shrink-0 flex-col border-r border-zinc-200 bg-paper-dim dark:border-zinc-800 dark:bg-zinc-900 ${
           isMobile
             ? // visibility (not just transform) keeps the closed drawer out of the tab order;
               // transitioning it lets the slide-out animation finish first.

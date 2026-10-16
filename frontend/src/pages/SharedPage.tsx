@@ -17,7 +17,7 @@ export default function SharedPage() {
   useDocumentTitle(shared.data ? `${shared.data.title} (shared)` : 'Shared chat')
 
   return (
-    <div className="flex h-full flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-full flex-col bg-paper text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <header className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 dark:border-zinc-800">
         <Link to="/" className="text-sm font-semibold">
           WebUI Replica

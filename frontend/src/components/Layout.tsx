@@ -17,7 +17,7 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-full bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-full bg-paper text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <Sidebar open={open} onClose={() => setOpen(false)} isMobile={isMobile} />
       <main className="min-w-0 flex-1">
         <Outlet

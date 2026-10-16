@@ -16,7 +16,7 @@ body,
     env(safe-area-inset-left);
 }
 body {
-  @apply bg-white dark:bg-zinc-950;
+  @apply bg-paper dark:bg-zinc-950;
 }
 
 /* iPhone Safari zooms the page into any text field under 16px when it's

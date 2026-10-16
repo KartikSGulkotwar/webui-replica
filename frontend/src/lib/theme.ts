@@ -16,7 +16,7 @@ export function applyTheme(theme: Theme) {
   // The browser / installed app's title bar follows the theme.
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', theme === 'dark' ? '#09090b' : '#ffffff')
+    ?.setAttribute('content', theme === 'dark' ? '#09090b' : '#faf9f6')
   try {
     localStorage.setItem(STORAGE_KEY, theme)
   } catch {

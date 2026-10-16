@@ -42,7 +42,7 @@ export default function AuthPage() {
   if (me.data) return <Navigate to={next} replace />
   // Wait for the site settings: they decide between "create the admin account"
   // and normal sign-in, and rendering early flashes the wrong one.
-  if (config.isLoading) return <div className="h-full bg-white dark:bg-zinc-950" />
+  if (config.isLoading) return <div className="h-full bg-paper dark:bg-zinc-950" />
 
   const busy = login.isPending || signup.isPending || guest.isPending
   const error = signup.error ?? login.error ?? guest.error
@@ -56,7 +56,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-white text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="flex h-full flex-col bg-paper text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <div className="flex justify-end p-2">
         <ThemeToggle />
       </div>
