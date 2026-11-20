@@ -210,6 +210,11 @@ async def retrieve(
 
     best = reciprocal_rank_fusion(keyword, semantic)[:top_k]
     if not best:
+        # Nothing matched: the request is about the files as a whole ("write
+        # interview questions from my resume"), not a fact in them. Use the
+        # start of each attached file (all of a short one) rather than nothing.
+        best = _opening_chunks(session, document_ids, top_k)
+    if not best:
         return []
     chunks = {
         c.id: c for c in session.exec(select(DocumentChunk).where(col(DocumentChunk.id).in_(best)))
@@ -231,6 +236,18 @@ async def retrieve(
         )
         for n, cid in enumerate(best)
     ]
+
+
+def _opening_chunks(session: Session, document_ids: list[str], limit: int) -> list[int]:
+    """The first `limit` chunks, taking each file's beginning in turn."""
+    rows = session.exec(
+        select(DocumentChunk.id, DocumentChunk.document_id, DocumentChunk.position).where(
+            col(DocumentChunk.document_id).in_(document_ids)
+        )
+    ).all()
+    order = {d: i for i, d in enumerate(document_ids)}
+    rows = sorted(rows, key=lambda r: (r[2], order.get(r[1], len(order))))
+    return [cid for cid, _, _ in rows[:limit]]
 
 
 async def _vector_rank(

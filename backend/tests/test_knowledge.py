@@ -170,6 +170,29 @@ def test_chat_cites_attached_documents(client, ollama_chat) -> None:
 
 
 @respx.mock
+def test_requests_about_the_whole_file_still_get_it(client, ollama_chat) -> None:
+    # Nothing in the resume shares a word with the request, so search finds
+    # nothing; the file is still used instead of being silently ignored.
+    resume = "Jane Roe. Python developer. Built a FastAPI service with PostgreSQL."
+    doc = upload(client, "resume.pdf", make_pdf([resume, "Education: BSc Physics"])).json()
+    route = respx.post(f"{OLLAMA}/api/chat").respond(content=reply("Q1 [1]"))
+    conv = client.post(
+        "/api/conversations", json={"attachments": {"document_ids": [doc["id"]]}}
+    ).json()["id"]
+    resp = client.post(
+        "/api/chat/stream",
+        json={"conversation_id": conv, "model_id": "ollama:m", "message": "Make a question bank"},
+    )
+    sources = events(resp)[0]["sources"]
+    assert [(s["page"], s["text"]) for s in sources] == [
+        (1, resume),
+        (2, "Education: BSc Physics"),
+    ]
+    sent = json.loads(route.calls.last.request.content)["messages"]
+    assert "FastAPI" in sent[0]["content"]
+
+
+@respx.mock
 def test_chat_without_attachments_has_no_sources(client, ollama_chat) -> None:
     upload(client, "policy.txt", POLICY.encode())  # exists, but not attached
     route = respx.post(f"{OLLAMA}/api/chat").respond(content=reply("Hi"))
